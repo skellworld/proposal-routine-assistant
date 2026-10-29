@@ -13,7 +13,7 @@ data/*
 data/templates/Temp/
 
 # 편집기·도구
-.claude/
+.claude/settings.local.json
 .vscode/
 .idea/
 ~$*

@@ -37,6 +37,23 @@ cd proposal-routine-assistant
 ### 최신 버전으로 업데이트
 `update.bat` 더블클릭 — `git pull`로 최신 코드를 받고 패키지를 맞춥니다. 이후 `run.bat`을 다시 실행하세요.
 
+### Claude Code로 설치·실행하기
+저장소 폴더에서 Claude Code를 열면 `CLAUDE.md`(프로젝트 안내)를 자동으로 읽습니다. 아래 명령을 입력하면 됩니다.
+
+| 명령 | 하는 일 |
+|---|---|
+| `/install` | Python 확인 → 설치 → Claude 연결 점검 → 서버 실행 |
+| `/start` | 서버 켜기 (켜져 있으면 재시작해 최신 코드 반영), `/start 종료`로 끄기 |
+| `/update` | GitHub에서 최신 코드 받기 → 패키지 갱신 → 재시작 |
+| `/publish` | 이 PC의 코드·템플릿 변경을 커밋해 GitHub에 올리기 (확인 후 진행) |
+
+말로 "서버 켜줘", "업데이트해줘"라고 해도 됩니다. 터미널에서 직접 쓰려면 같은 기능의 `manage.py`를 쓰세요.
+```powershell
+python manage.py setup     # 설치
+python manage.py doctor    # 설치·Claude 연결 점검
+python manage.py start     # 백그라운드 실행 (stop / restart / status / logs / update)
+```
+
 ### macOS / Linux
 `./setup.sh` → `./run.sh` (업데이트는 `git pull` 후 `./setup.sh`). 템플릿 미리보기 이미지는 PowerPoint가 있는 Windows에서만 만들어지며, 그 외 기능은 동일합니다.
 
