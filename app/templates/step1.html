@@ -1,0 +1,136 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>1. RFP · 공고서 비교 분석</h1>
+
+<div class="card">
+  <h2>📥 한 번에 올리기</h2>
+  <div class="drop bulk" id="bulkdrop">
+    <b>RFP·공고서 파일 여러 개를 한꺼번에 끌어다 놓으세요</b><br>
+    <span class="muted">파일명으로 자동 분류합니다 — '공고'가 들어가면 공고서, 가장 최근 연도가 아니거나 '전년·과거'가 들어가면 과거 문서.
+    분류가 틀리면 아래 목록에서 바꿀 수 있습니다.</span>
+  </div>
+  <input type="file" id="bulkinput" hidden multiple accept=".pdf,.hwp,.hwpx,.docx,.txt,.md">
+</div>
+
+<div class="doc-grid">
+  <div class="doc-col">
+    <div class="col-title">올해 (현재)</div>
+    {% for kind, title in [('current_rfp', '현재 RFP'), ('notice', '현재 공고서')] %}
+    <div class="card uploader" data-pid="{{ p.id }}" data-kind="{{ kind }}" data-label="{{ title }}" data-files='{{ (p.files[kind] or []) | tojson }}'>
+      <h2>{{ title }} <span class="muted count"></span></h2>
+      <div class="drop">끌어다 놓거나 클릭 (여러 개 가능)</div>
+      <input type="file" hidden multiple accept=".pdf,.hwp,.hwpx,.docx,.txt,.md">
+      <ul class="filelist"></ul>
+    </div>
+    {% endfor %}
+  </div>
+  <div class="doc-col">
+    <div class="col-title">전년도 / 과거 <span class="muted">(선택)</span></div>
+    {% for kind, title in [('past_rfp', '과거 RFP'), ('past_notice', '과거 공고서')] %}
+    <div class="card uploader" data-pid="{{ p.id }}" data-kind="{{ kind }}" data-label="{{ title }}" data-files='{{ (p.files[kind] or []) | tojson }}'>
+      <h2>{{ title }} <span class="muted count"></span></h2>
+      <div class="drop">끌어다 놓거나 클릭 (여러 개 가능)</div>
+      <input type="file" hidden multiple accept=".pdf,.hwp,.hwpx,.docx,.txt,.md">
+      <ul class="filelist"></ul>
+    </div>
+    {% endfor %}
+  </div>
+</div>
+
+<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
+  <span class="muted" id="runhint"></span>
+  <button class="btn primary" id="run">▶ 분석 실행</button>
+</div>
+<div id="checkstatus" style="margin-bottom:18px"></div>
+<div id="result"></div>
+{% endblock %}
+{% block scripts %}
+<script type="text/x-page">
+const PID = {{ p.id | tojson }};
+let data = {{ (p.step1 or None) | tojson }};
+const LABEL = { current_rfp: "현재 RFP", notice: "현재 공고서", past_rfp: "과거 RFP", past_notice: "과거 공고서" };
+
+function updateHint(files) {
+  const cur = (files.current_rfp || []).length + (files.notice || []).length;
+  const past = (files.past_rfp || []).length + (files.past_notice || []).length;
+  const hasNotice = (files.notice || []).length + (files.past_notice || []).length;
+  document.getElementById("runhint").textContent = !cur
+    ? "현재 RFP 또는 현재 공고서를 먼저 올려주세요."
+    : `${past ? "현재 문서와 과거 문서를 비교" : "현재 문서만 단독 분석"}합니다${hasNotice ? " · 공고서의 참가자격·계약방식·일정도 함께 분석" : ""}.`
+      + ((files.notice || []).length ? " 현재 공고서가 있으므로 2단계 공고서 분석·체크리스트도 동시에 생성합니다." : "");
+  hasCurrentNotice = (files.notice || []).length > 0;
+}
+let hasCurrentNotice = false;
+
+function renderResult() {
+  const box = document.getElementById("result");
+  if (!data) { box.innerHTML = ""; return; }
+  const list = arr => `<ul class="tight">${(arr || []).map(x => `<li>${esc(x)}</li>`).join("")}</ul>`;
+  const ts = Date.now();
+  const docs = data.documents
+    ? Object.entries(data.documents).filter(([, v]) => v.length).map(([k, v]) => `<b>${LABEL[k] || k}</b> ${v.map(esc).join(", ")}`).join(" · ")
+    : "";
+  box.innerHTML = `
+  <div class="card">
+    <h2>${esc(data.project_title || "분석 요약")}</h2>
+    <p>${esc(data.summary)}</p>
+    <div class="row">
+      <div style="flex:1 1 300px"><b>${data.compared ? "핵심 변경점" : "핵심 요구사항"}</b>${list(data.key_changes)}</div>
+      <div style="flex:1 1 300px"><b>제안 전략 포인트</b>${list(data.strategy)}</div>
+    </div>
+    <p class="muted">분석 시각: ${esc(data.analyzed_at)}${docs ? `<br>분석 문서: ${docs}` : ""}</p>
+  </div>
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+      <h2 style="margin:0">비교표 이미지</h2>
+      <a class="btn" href="/api/projects/${PID}/step1/table.png?t=${ts}" download>⬇ PNG 다운로드</a>
+    </div>
+    <img class="table-img" src="/api/projects/${PID}/step1/table.png?t=${ts}" alt="RFP 비교표">
+  </div>
+  <div class="card">
+    <h2>비교표 (상세)</h2>
+    <table class="grid">
+      <thead><tr><th style="width:13%">항목</th><th>과거</th><th>현재</th><th style="width:7%">변경</th><th>시사점</th></tr></thead>
+      <tbody>${(data.rows || []).map(r => `
+        <tr><td class="item">${esc(r.item)}${r.source && r.source !== "공통" ? `<br><span class="srctag ${r.source === "공고서" ? "n" : ""}">${esc(r.source)}</span>` : ""}</td>
+        <td>${esc(r.past)}</td><td>${esc(r.current)}</td>
+        <td><span class="chg chg-${esc(r.change)}">${esc(r.change)}</span></td><td>${esc(r.insight)}</td></tr>`).join("")}
+      </tbody>
+    </table>
+  </div>`;
+}
+
+const up = initUploaders(updateHint);
+updateHint(Object.fromEntries([...document.querySelectorAll(".uploader")].map(b => [b.dataset.kind, JSON.parse(b.dataset.files)])));
+bindDrop(document.getElementById("bulkdrop"), document.getElementById("bulkinput"), files => {
+  const byKind = {};
+  classifyFiles(files).forEach(({ file, kind }) => (byKind[kind] = byKind[kind] || []).push(file));
+  up.uploadMany(byKind);
+});
+renderResult();
+function renderCheckStatus(c, st) {
+  const box = document.getElementById("checkstatus");
+  const strat = st ? `<div class="notice-done" style="margin-top:8px"><span>💡 핵심 추진 전략 5가지를 ${st.running ? "추천하는 중입니다 (백그라운드)" : "추천했습니다"}.</span>
+       <a class="btn sm" href="/workspaces/${PID}/strategy">3단계에서 확인 →</a></div>` : "";
+  if (!c || !c.ran) { box.innerHTML = strat; return; }
+  box.innerHTML = strat + (c.ok
+    ? `<div class="notice-done"><span>✔ 공고서 분석·준비서류 체크리스트도 함께 만들었습니다 (서류 ${c.count}건).</span>
+       <a class="btn primary sm" href="/workspaces/${PID}/step2">2단계에서 확인 →</a></div>`
+    : `<div class="notice-done notice-err"><span>⚠ RFP 분석은 끝났지만 체크리스트 생성에 실패했습니다: ${esc(c.error)}</span>
+       <a class="btn sm" href="/workspaces/${PID}/step2">2단계에서 다시 실행 →</a></div>`);
+}
+
+document.getElementById("run").onclick = async () => {
+  try {
+    const msg = hasCurrentNotice ? "Claude가 RFP·공고서 비교 분석과 체크리스트 생성을 함께 하는 중..." : "Claude가 RFP·공고서를 비교 분석하는 중...";
+    const r = await runLong(msg, () => api("POST", `/api/projects/${PID}/step1/analyze`));
+    const { checklist, strategy, ...rest } = r;
+    data = rest;
+    renderResult();
+    renderCheckStatus(checklist, strategy);
+    Router.refreshSidebar();
+    toast(checklist && checklist.ok ? "분석 완료 · 체크리스트도 생성됨" : "분석 완료");
+  } catch (e) {}
+};
+</script>
+{% endblock %}

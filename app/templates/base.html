@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{% if p %}{{ p.name }} - {% endif %}제안서 루틴 도우미{% endblock %}</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js"></script>
+</head>
+<body>
+<div id="navprogress"></div>
+<div class="app">
+  <aside id="sidebar">
+    <a class="brand" href="/">📑 제안서 루틴 도우미</a>
+    <button class="btn primary block" onclick="App.newWorkspace()">+ 새 워크스페이스</button>
+
+    <div class="side-label">워크스페이스</div>
+    <nav class="ws-list">
+      {% for w in workspaces %}
+        {% set items = (w.step2['items'] if w.step2 else []) %}
+        {% set dd = d_day(w.deadline) if w.deadline else '' %}
+        <a href="/workspaces/{{ w.id }}" class="ws {{ 'on' if p and p.id == w.id }}">
+          <span class="ws-name">{{ w.name }}</span>
+          <span class="ws-sub">
+            <span class="dots" title="1.RFP분석 / 2.체크리스트 / 3.추진전략 / 4.목차PPT">
+              <i class="{{ 'ok' if w.step1 }}"></i><i class="{{ 'ok' if items and (items | selectattr('checked') | list | length) == (items | length) else ('half' if items) }}"></i><i class="{{ 'ok' if w.strategy }}"></i><i class="{{ 'ok' if w.step3 and w.step3.outputs }}"></i>
+            </span>
+            {% if w.client %}<span class="ws-client">{{ w.client }}</span>{% endif %}
+            {% if dd %}<span class="dday {{ 'urgent' if dd == 'D-DAY' or (dd.startswith('D-') and dd[2:] | int <= 7) }} {{ 'over' if dd == '마감' }}">{{ dd }}</span>{% endif %}
+          </span>
+        </a>
+      {% else %}
+        <p class="side-empty">아직 워크스페이스가 없습니다.</p>
+      {% endfor %}
+    </nav>
+
+    <div class="side-bottom">
+      <a href="/" class="side-link {{ 'on' if active == 'home' and not p }}">🏠 홈</a>
+      <a href="/templates" class="side-link {{ 'on' if active == 'templates' }}">🗂 템플릿 관리</a>
+      <a href="/company" class="side-link {{ 'on' if active == 'company' }}">🏢 우리 회사 현황</a>
+      <a href="/settings" class="side-link {{ 'on' if active == 'settings' }}">⚙ 설정
+        <span class="side-badge">{{ 'Pro 계정' if backend == 'cli' else 'API 키' }}</span></a>
+    </div>
+  </aside>
+
+  <main id="content">
+    {% if p %}
+    <div class="ws-head">
+      <div>
+        <div class="ws-title">{{ p.name }}
+          {% if p.deadline %}{% set dd = d_day(p.deadline) %}<span class="dday {{ 'over' if dd == '마감' }}">{{ dd }}</span>{% endif %}
+        </div>
+        <div class="muted">{{ p.client or '발주기관 미입력' }}{% if p.deadline %} · 마감 {{ p.deadline }}{% endif %}</div>
+      </div>
+      <nav class="tabs">
+        <a href="/workspaces/{{ p.id }}" class="{{ 'on' if active == 'home' }}">개요</a>
+        <a href="/workspaces/{{ p.id }}/step1" class="{{ 'on' if active == 'step1' }}">1. RFP 분석</a>
+        <a href="/workspaces/{{ p.id }}/step2" class="{{ 'on' if active == 'step2' }}">2. 공고서·체크리스트</a>
+        <a href="/workspaces/{{ p.id }}/strategy" class="{{ 'on' if active == 'strategy' }}">3. 추진 전략</a>
+        <a href="/workspaces/{{ p.id }}/step3" class="{{ 'on' if active == 'step3' }}">4. 목차 PPT</a>
+      </nav>
+    </div>
+    {% endif %}
+    {% block content %}{% endblock %}
+    {% block scripts %}{% endblock %}
+  </main>
+</div>
+
+<dialog id="ws-dialog">
+  <form method="dialog" onsubmit="event.preventDefault(); App.submitWorkspace(this)">
+    <h2>새 워크스페이스</h2>
+    <label>제안 과업명 *<input type="text" name="name" placeholder="예: 2027년 OO기관 정보보호 컨설팅 사업" required></label>
+    <label>발주기관<input type="text" name="client" placeholder="예: 한국OO진흥원"></label>
+    <label>제출 마감일<input type="date" name="deadline"></label>
+    <label>메모<textarea name="memo" rows="2"></textarea></label>
+    <div class="dlg-btns">
+      <button type="button" class="btn" onclick="this.closest('dialog').close()">취소</button>
+      <button type="submit" class="btn primary">만들기</button>
+    </div>
+  </form>
+</dialog>
+<div id="busy"><div class="box"><div class="spinner"></div><div class="msg"></div><div class="sub muted"></div></div></div>
+<div id="toast"></div>
+</body>
+</html>

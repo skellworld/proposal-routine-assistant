@@ -1,0 +1,206 @@
+{% extends "base.html" %}
+{% block title %}템플릿 관리 - 제안서 루틴 도우미{% endblock %}
+{% block content %}
+<h1>🗂 템플릿 관리</h1>
+<div class="card">
+  <h2>템플릿 등록</h2>
+  <div class="row" style="align-items:stretch">
+    <div class="drop" id="tdrop" style="flex:1 1 260px;display:flex;flex-direction:column;justify-content:center">
+      <span id="tfile">제안서 양식·과거 제안서 PPT(.pptx)를 끌어오거나 클릭하세요</span>
+      <span class="muted">디자인(배경·로고·머리말·도형)은 그대로 쓰고 글자 자리만 양식으로 바꿉니다</span>
+    </div>
+    <input type="file" id="tinput" hidden accept=".pptx">
+    <div style="flex:2 1 360px;display:flex;flex-direction:column;gap:8px">
+      <input type="text" id="tname" placeholder="표시 이름 (예: 2026 회사 표준 제안서)">
+      <textarea id="tdesc" rows="2" placeholder="설명 — 비워두면 업로드할 때 템플릿을 분석해 자동으로 입력합니다 (나중에 수정 가능)"></textarea>
+      <label class="chk"><input type="checkbox" id="tstruct" checked>
+        업로드 후 <b>양식으로 자동 구조화</b> — Claude가 표지·목차·간지·본문 슬라이드를 고르고 글자 자리를 {% raw %}{{토큰}}{% endraw %}으로 바꿉니다 (약 30초~1분)</label>
+      <div style="text-align:right"><button class="btn primary" id="tup" disabled>⬆ 등록</button></div>
+    </div>
+  </div>
+</div>
+
+<div id="tlist"></div>
+
+{% raw %}
+<div class="card">
+  <h2>양식 파일 규칙 <span class="muted" style="font-size:14px">— [양식 다운로드]한 파일을 PowerPoint에서 고쳐 다시 올릴 때</span></h2>
+  <ul class="tight muted">
+    <li>각 슬라이드 <b>노트 첫 줄</b>이 역할입니다: <code>#표지</code> <code>#조견표</code> <code>#목차</code> <code>#간지</code> <code>#본문</code> <code>#본문-중</code>(선택) <code>#뒷표지</code></li>
+    <li>글자 자리는 <b>{{토큰}}</b>: 표지 <code>{{사업명}}</code> <code>{{세부사업명}}</code> <code>{{날짜}}</code> · 목차 <code>{{목차번호}}</code> <code>{{목차제목}}</code> ·
+      간지 <code>{{대번호}}</code> <code>{{대제목}}</code> <code>{{중목차}}</code> · 본문 <code>{{중번호}}</code> <code>{{중제목}}</code> <code>{{소번호}}</code> <code>{{소제목}}</code> <code>{{거버닝}}</code> <code>{{작성지침}}</code></li>
+    <li>목차는 토큰이 든 행(그룹)을 대제목 수만큼, 간지의 <code>{{중목차}}</code>는 문단을 중제목 수만큼 복제합니다. 머리말(레이아웃)에 <code>{{사업명}}</code>을 넣어도 됩니다.</li>
+    <li>디자인·위치·글꼴은 자유롭게 바꿔도 됩니다. 토큰 하나의 글자 서식은 통일하세요. 쪽번호의 전체 장수(<code>/ 99</code>)는 자동으로 맞춰집니다.</li>
+    <li>양식이 아닌 일반 PPT는 레이아웃(제목 슬라이드·구역 머리글·제목 및 내용)을 자동 매핑해 사용합니다.</li>
+  </ul>
+</div>
+{% endraw %}
+{% endblock %}
+{% block scripts %}
+<script type="text/x-page">
+let tpls = {{ tpls | tojson }};
+{% raw %}
+const ROLES = [["title", "표지"], ["section", "간지(대목차)"], ["content", "본문(목차·중/소목차)"]];
+const FIELD = { mid_num: "중번호", mid_title: "중제목", sub: "소제목", head: "거버닝(헤드메시지)" };
+const SRC = {
+  claude: '<span class="src ai">🤖 AI 자동 분석</span>',
+  rule: '<span class="src auto">⚙ 구조 자동 분석</span>',
+  user: '<span class="src user">✏ 직접 입력</span>',
+};
+let pending = null;
+
+const drop = document.getElementById("tdrop"), input = document.getElementById("tinput"), upBtn = document.getElementById("tup");
+const pick = f => {
+  if (!f) return;
+  if (!f.name.toLowerCase().endsWith(".pptx")) return toast(".pptx 파일만 등록할 수 있습니다", true);
+  pending = f;
+  document.getElementById("tfile").textContent = `📄 ${f.name}`;
+  if (!document.getElementById("tname").value) document.getElementById("tname").value = f.name.replace(/\.pptx$/i, "");
+  upBtn.disabled = false;
+};
+drop.onclick = () => input.click();
+input.onchange = () => pick(input.files[0]);
+drop.ondragover = e => { e.preventDefault(); drop.classList.add("over"); };
+drop.ondragleave = () => drop.classList.remove("over");
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove("over"); pick(e.dataTransfer.files[0]); };
+upBtn.onclick = async () => {
+  if (!pending) return;
+  const fd = new FormData();
+  fd.append("file", pending);
+  fd.append("name", document.getElementById("tname").value);
+  fd.append("description", document.getElementById("tdesc").value);
+  const structure = document.getElementById("tstruct").checked;
+  fd.append("structure", structure ? "true" : "false");
+  const auto = !document.getElementById("tdesc").value.trim();
+  try {
+    const t = await runLong(structure ? "템플릿을 등록하고 양식으로 구조화하는 중..." : "템플릿을 등록하는 중...",
+      () => api("POST", "/api/templates", fd));
+    if (t.structure_error) toast(`등록은 됐지만 구조화에 실패했습니다: ${t.structure_error}`, true);
+    else if (t.structured) toast("양식으로 구조화했습니다 — 미리보기와 확인할 점을 살펴보세요");
+    else if (auto) toast(`설명 자동 입력: ${t.description}`);
+    tpls = await api("GET", "/api/templates");
+    pending = null; input.value = ""; upBtn.disabled = true;
+    document.getElementById("tfile").textContent = "회사 제안서 템플릿(.pptx)을 끌어오거나 클릭하세요";
+    document.getElementById("tname").value = ""; document.getElementById("tdesc").value = "";
+    render(); if (!auto && !structure) toast("템플릿을 등록했습니다");
+  } catch (e) {}
+};
+
+function formBlock(t) {
+  const f = encodeURIComponent(t.file);
+  const roles = Object.entries(t.form.roles).sort((a, b) => a[1] - b[1]);
+  if (t.form.kind !== "token") {
+    return `<div class="form-info">
+      <b>📐 양식형 템플릿 (안내 문구 인식)</b> <span class="muted">— 슬라이드 디자인을 그대로 복제해 글자만 바꿉니다</span>
+      <div class="roles">${roles.map(([r, n]) => `<span class="role">${esc(r)} <b>${n}p</b></span>`).join("")}</div>
+      <div class="muted">본문 인식 칸: ${t.form.body_fields.map(x => FIELD[x] || x).join(" · ")}</div>
+    </div>`;
+  }
+  const st = t.structured || {};
+  const v = encodeURIComponent(st.at || t.uploaded_at || "");
+  const thumbs = st.previews ? roles.map(([r, n]) => `
+      <figure class="pv"><img src="/api/templates/${f}/preview/${n}?v=${v}" alt="${esc(r)}" loading="lazy">
+        <figcaption>${esc(r)}<span class="muted"> · ${(t.form.tokens[r] || []).map(x => `{{${x}}}`).join(" ") || "내용 그대로"}</span></figcaption></figure>`).join("") : "";
+  return `<div class="form-info">
+      <b>📐 토큰형 양식</b> <span class="muted">— #역할 노트와 {{토큰}}으로 구조화됨${st.at ? ` · ${esc(st.at)}` : ""}</span>
+      ${st.summary ? `<div style="margin-top:6px">${esc(st.summary)}</div>` : ""}
+      ${thumbs ? `<div class="pv-strip">${thumbs}</div>` : `<div class="roles">${roles.map(([r, n]) => `<span class="role">${esc(r)} <b>${n}p</b></span>`).join("")}</div>`}
+      ${t.form.layout_tokens.length ? `<div class="muted">머리말(레이아웃) 토큰: ${t.form.layout_tokens.map(x => `{{${x}}}`).join(" ")}</div>` : ""}
+      ${(st.warnings || []).length ? `<details class="warn"><summary>⚠ 확인할 점 ${st.warnings.length}건</summary><ul class="tight">${st.warnings.map(w => `<li>${esc(w)}</li>`).join("")}</ul></details>` : ""}
+    </div>`;
+}
+
+function render() {
+  const box = document.getElementById("tlist");
+  box.innerHTML = tpls.map(t => {
+    const f = encodeURIComponent(t.file);
+    const selects = ROLES.map(([role, label]) => `
+      <label class="map"><span>${label}</span>
+        <select data-role="${role}">
+          <option value="">자동 (${esc((t.auto_mapping || {})[role] || "-")})</option>
+          ${t.layouts.map(l => `<option ${(t.mapping || {})[role] === l ? "selected" : ""}>${esc(l)}</option>`).join("")}
+        </select>
+      </label>`).join("");
+    return `
+    <div class="card tcard" data-file="${esc(t.file)}">
+      <div class="tcard-head">
+        <div style="flex:1">
+          <input type="text" class="tname" value="${esc(t.name)}" title="이름 (수정하면 자동 저장)">
+          <div class="desc-head">
+            <span>설명 ${SRC[t.description_source] || ""}</span>
+            <button class="btn sm" data-op="describe" title="템플릿을 다시 분석해 설명을 새로 만듭니다">🔄 다시 분석</button>
+          </div>
+          <textarea class="tdesc" rows="3" placeholder="템플릿 설명 (수정하면 자동 저장)">${esc(t.description)}</textarea>
+        </div>
+        <div class="tcard-badges">
+          ${t.default ? '<span class="badge done">기본 템플릿</span>' : ""}
+          ${t.builtin ? '<span class="badge todo">시스템 제공</span>' : ""}
+        </div>
+      </div>
+      ${t.error ? `<p style="color:var(--err)">⚠ ${esc(t.error)}</p>` : ""}
+      <p class="muted">${esc(t.file)} · ${esc(t.slide_size)} · 레이아웃 ${t.layouts.length}개 · 기존 슬라이드 ${t.slide_count}장 · ${(t.size / 1024).toFixed(0)}KB · 등록 ${esc(t.uploaded_at)}</p>
+      ${t.form ? formBlock(t) : `<div class="maps">${selects}</div>`}
+      <div class="tcard-ops">
+        ${t.form ? "" : '<button class="btn primary sm" data-op="save">💾 저장</button>'}
+        ${t.default ? "" : '<button class="btn sm" data-op="default">⭐ 기본으로 지정</button>'}
+        ${t.builtin ? "" : `<button class="btn sm ${t.form ? "" : "primary"}" data-op="structure">🤖 ${t.structured ? "다시 구조화" : "양식으로 구조화"}</button>`}
+        <button class="btn sm" data-op="sample">🧪 샘플 생성</button>
+        <a class="btn sm" href="/api/templates/${f}/download" download>⬇ ${t.form && t.form.kind === "token" ? "양식 다운로드" : "파일 다운로드"}</a>
+        ${t.has_original ? `<a class="btn sm" href="/api/templates/${f}/original" download>⬇ 원본</a>` : ""}
+        ${t.builtin ? "" : '<button class="btn sm danger" data-op="del">🗑 삭제</button>'}
+      </div>
+    </div>`;
+  }).join("");
+
+  box.querySelectorAll(".tcard").forEach(card => {
+    const file = card.dataset.file, f = encodeURIComponent(file);
+    const body = () => ({
+      name: card.querySelector(".tname").value,
+      description: card.querySelector(".tdesc").value,
+      mapping: Object.fromEntries([...card.querySelectorAll("select[data-role]")].filter(s => s.value).map(s => [s.dataset.role, s.value])),
+    });
+    // 이름·설명은 수정 후 포커스를 벗어나면 자동 저장
+    card.querySelectorAll(".tname, .tdesc").forEach(inp => inp.onchange = async () => {
+      try {
+        const t = await api("PUT", `/api/templates/${f}`, { name: card.querySelector(".tname").value, description: card.querySelector(".tdesc").value });
+        Object.assign(tpls.find(x => x.file === file), t);
+        card.querySelector(".desc-head span").innerHTML = `설명 ${SRC[t.description_source] || ""}`;
+        toast(inp.classList.contains("tdesc") ? "설명을 저장했습니다" : "이름을 저장했습니다");
+      } catch (e) { toast(e.message, true); }
+    });
+    card.querySelectorAll("[data-op]").forEach(b => b.onclick = async () => {
+      const op = b.dataset.op;
+      try {
+        if (op === "describe") {
+          const cur = tpls.find(x => x.file === file);
+          if (cur.description_source === "user" && cur.description && !confirm("직접 입력한 설명을 자동 분석 결과로 바꿀까요?")) return;
+          busy(true, "템플릿을 분석하는 중...");
+          try { await api("POST", `/api/templates/${f}/describe`); toast("설명을 새로 분석했습니다"); } finally { busy(false); }
+        }
+        if (op === "structure") {
+          const cur = tpls.find(x => x.file === file);
+          if (cur.structured && !confirm("보관된 원본에서 다시 구조화합니다. 양식 파일을 직접 고쳤다면 그 수정은 사라집니다. 진행할까요?")) return;
+          await runLong("Claude가 슬라이드를 분석해 양식으로 구조화하는 중...", () => api("POST", `/api/templates/${f}/structure`));
+          toast("양식으로 구조화했습니다");
+        }
+        if (op === "save") { await api("PUT", `/api/templates/${f}`, body()); toast("저장했습니다"); }
+        if (op === "default") { await api("PUT", `/api/templates/${f}`, { ...body(), default: true }); toast("기본 템플릿으로 지정했습니다"); }
+        if (op === "sample") {
+          await api("PUT", `/api/templates/${f}`, body());
+          busy(true, "샘플 PPT를 만드는 중...");
+          try { await downloadPost(`/api/templates/${f}/sample`); } finally { busy(false); }
+        }
+        if (op === "del") {
+          if (!confirm(`'${card.querySelector(".tname").value}' 템플릿을 삭제할까요?`)) return;
+          await api("DELETE", `/api/templates/${f}`); toast("삭제했습니다");
+        }
+        tpls = await api("GET", "/api/templates");
+        render();
+      } catch (e) { toast(e.message, true); }
+    });
+  });
+}
+render();
+{% endraw %}
+</script>
+{% endblock %}

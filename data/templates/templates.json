@@ -1,0 +1,165 @@
+{
+  "기본템플릿.pptx": {
+    "name": "기본템플릿",
+    "description": "16:9 비율, 남색 · 파랑 · 빨강 계열 색상, 글꼴 맑은 고딕, 레이아웃 11종 템플릿.",
+    "uploaded_at": "2026-10-29 11:19",
+    "mapping": {},
+    "slide_size": "16:9",
+    "layouts": [
+      "Title Slide",
+      "Title and Content",
+      "Section Header",
+      "Two Content",
+      "Comparison",
+      "Title Only",
+      "Blank",
+      "Content with Caption",
+      "Picture with Caption",
+      "Title and Vertical Text",
+      "Vertical Title and Text"
+    ],
+    "auto_mapping": {
+      "title": "Title Slide",
+      "section": "Section Header",
+      "content": "Title and Content"
+    },
+    "slide_count": 0,
+    "mtime": 1793239785.948,
+    "size": 28422,
+    "default": false,
+    "description_source": "rule",
+    "form": null
+  },
+  "시큐리티콘텐츠허브_제안서_가로형.pptx": {
+    "name": "시큐리티콘텐츠허브 가로형 제안서",
+    "description": "시큐리티콘텐츠허브 가로형 제안서 양식. 남색·청록 그라데이션과 보안 인프라 일러스트, 표지·조견표·목차·간지·내지·뒷표지(THANK YOU) 구성.",
+    "uploaded_at": "2026-10-29 13:05",
+    "mapping": {},
+    "description_source": "user",
+    "default": true,
+    "slide_size": "1.44:1",
+    "layouts": [
+      "표지",
+      "2_표지",
+      "내지",
+      "조견표",
+      "목차",
+      "1_목차",
+      "간지"
+    ],
+    "auto_mapping": {
+      "title": "표지",
+      "section": "간지",
+      "content": "표지"
+    },
+    "slide_count": 7,
+    "form": {
+      "roles": {
+        "표지": 1,
+        "조견표": 2,
+        "목차": 3,
+        "간지": 4,
+        "본문": 5,
+        "뒷표지": 7
+      },
+      "body_fields": [
+        "head",
+        "mid_num",
+        "mid_title",
+        "sub"
+      ],
+      "section_fields": [
+        "list",
+        "num",
+        "title"
+      ]
+    },
+    "mtime": 1793246702.973,
+    "size": 8246049
+  },
+  "시큐리티콘텐츠허브_제안서_세로형_양식.pptx": {
+    "name": "시큐리티콘텐츠허브_제안서_세로형_양식",
+    "description": "흰 바탕에 남색 제목, 청록에서 연두로 번지는 그라데이션 띠와 아이소메트릭 네트워크 일러스트를 써서 밝고 기술적인 분위기입니다. 공공 SI나 보안·IT 인프라 제안에 어울립니다.",
+    "uploaded_at": "2026-10-29 13:34",
+    "mapping": {},
+    "description_source": "claude",
+    "default": false,
+    "structured": {
+      "at": "2026-10-29 13:34",
+      "summary": "A4 세로형 KISA 제안서 양식: 표지(s1), 목차 5행(s2), 장 간지(s3), 조견표(s4), 본문(s5), THANK YOU 뒷표지(s6)",
+      "warnings": [
+        "s3('목차 2' 레이아웃)은 장 번호, 대제목, 중제목 목록이 있는 구조라서 목차가 아니라 장 간지(section)로 지정했습니다.",
+        "s2 목차 번호 아이콘(마름모)의 색이 행마다 남색과 초록으로 번갈아 나옵니다. 목차 행이 늘거나 줄 때 색 순서가 잘 유지되는지 확인해 주세요.",
+        "s4 조견표에는 내용 도형이 없고 제목 placeholder('0.', '조견표')만 있어서 그대로 두었습니다.",
+        "s5 본문의 중번호('1.')와 중제목 상자가 가로로 겹칩니다(0.55~1.22 / 0.96~). 번호가 두 자리로 길어지면 겹쳐 보일 수 있습니다.",
+        "s1과 s6의 KISA 로고와 CONTENTS HUB 로고는 고정 디자인으로 보고 지정하지 않았습니다."
+      ],
+      "source_slides": {
+        "표지": 1,
+        "목차": 2,
+        "간지": 3,
+        "조견표": 4,
+        "본문": 5,
+        "뒷표지": 6
+      },
+      "previews": 6
+    },
+    "slide_size": "0.71:1",
+    "layouts": [
+      "표지",
+      "표지 2",
+      "조견표",
+      "내지",
+      "목차",
+      "목차 2"
+    ],
+    "auto_mapping": {
+      "title": "표지",
+      "section": "표지",
+      "content": "표지"
+    },
+    "slide_count": 6,
+    "form": {
+      "kind": "token",
+      "roles": {
+        "표지": 1,
+        "조견표": 2,
+        "목차": 3,
+        "간지": 4,
+        "본문": 5,
+        "뒷표지": 6
+      },
+      "tokens": {
+        "표지": [
+          "날짜",
+          "사업명",
+          "세부사업명"
+        ],
+        "조견표": [],
+        "목차": [
+          "목차번호",
+          "목차제목"
+        ],
+        "간지": [
+          "대번호",
+          "대제목",
+          "중목차"
+        ],
+        "본문": [
+          "거버닝",
+          "소번호",
+          "소제목",
+          "중번호",
+          "중제목"
+        ],
+        "뒷표지": [
+          "사업명",
+          "세부사업명"
+        ]
+      },
+      "layout_tokens": []
+    },
+    "mtime": 1793248474.705,
+    "size": 3983037
+  }
+}

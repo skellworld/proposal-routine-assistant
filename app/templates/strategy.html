@@ -1,0 +1,133 @@
+{% extends "base.html" %}
+{% block content %}
+<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+  <h1 style="margin-bottom:6px">3. 핵심 추진 전략 추천</h1>
+  <button class="btn sm no-print" id="regen" title="최신 분석 결과를 반영해 다시 추천받습니다">🔄 다시 추천</button>
+</div>
+<p class="muted" style="margin-top:0">RFP·공고서와 1~2단계 분석을 바탕으로 Claude가 추천한 이번 사업의 핵심 전략입니다. 따로 할 일은 없고, 제안서 작성 방향을 잡을 때 참고하세요.</p>
+<div id="sbox"></div>
+{% endblock %}
+{% block scripts %}
+<script type="text/x-page">
+const PID = {{ p.id | tojson }};
+let data = {{ (p.strategy or None) | tojson }};
+const running = {{ strategy_running | tojson }};
+const COMPANY = {{ {"profile": company_info.profile != "", "updated_at": company_info.updated_at} | tojson }};
+const hasDocs = {{ ((((p.files.current_rfp or []) + (p.files.notice or [])) | length) > 0) | tojson }};
+
+function render() {
+  const box = document.getElementById("sbox");
+  if (!data) return;
+  const s = data.strategies || [];
+  box.innerHTML = `
+  ${companyNote()}
+  <div class="concept">
+    <div class="concept-label">제안 콘셉트</div>
+    <div class="concept-title">“${esc(data.concept)}”</div>
+    <div class="concept-desc">${esc(data.concept_desc)}</div>
+  </div>
+  <div class="strat-list">
+    ${s.map((x, i) => `
+    <div class="card strat">
+      <div class="strat-head">
+        <span class="strat-num">${i + 1}</span>
+        <div style="flex:1">
+          <div class="strat-title">${esc(x.title)}</div>
+          <div class="strat-msg">${esc(x.message)}</div>
+        </div>
+      </div>
+      <div class="strat-body">
+        <div><div class="strat-k">근거</div><div>${esc(x.rationale)}</div></div>
+        <div><div class="strat-k">제안서에 담을 실행 방안</div><ul class="tight">${(x.actions || []).map(a => `<li>${esc(a)}</li>`).join("")}</ul></div>
+        <div class="strat-tags">
+          ${x.evaluation && x.evaluation !== "명시 없음" ? `<span class="stag eval">📊 ${esc(x.evaluation)}</span>` : ""}
+          ${x.where ? `<span class="stag where">📍 ${esc(x.where)}</span>` : ""}
+          ${x.our_edge ? `<span class="stag fit">🏢 우리 강점: ${esc(x.our_edge)}</span>` : ""}
+        </div>
+      </div>
+    </div>`).join("")}
+  </div>
+  ${(data.gaps || []).length ? `<div class="card"><h2>🧩 우리 회사 보완 포인트</h2><ul class="tight">${data.gaps.map(g => `<li>${esc(g)}</li>`).join("")}</ul></div>` : ""}
+  ${(data.cautions || []).length ? `<div class="card"><h2>⚠ 놓치면 안 되는 리스크</h2><ul class="tight caution">${data.cautions.map(c => `<li>${esc(c)}</li>`).join("")}</ul></div>` : ""}
+  ${renderScoring(data.scoring)}
+  <p class="muted">추천 시각: ${esc(data.generated_at || "")}</p>`;
+}
+
+function companyNote() {
+  const applied = data.company_applied || "";
+  if (!COMPANY.profile)
+    return `<div class="company-note off"><span>🏢 우리 회사 현황이 등록되지 않아 일반 전략으로 추천했습니다.</span>
+      <a class="btn sm" href="/company">회사 현황 등록 →</a></div>`;
+  if (applied && applied === COMPANY.updated_at)
+    return `<div class="company-note"><span>🏢 우리 회사 현황(${esc(applied)} 저장본)을 반영한 맞춤 전략입니다.</span>
+      <a class="btn sm" href="/company">회사 현황 보기</a></div>`;
+  return `<div class="company-note off"><span>🏢 ${applied ? "회사 현황이 바뀌었습니다." : "이 결과는 회사 현황 없이 추천됐습니다."} [🔄 다시 추천]을 누르면 최신 회사 현황을 반영합니다.</span>
+    <a class="btn sm" href="/company">회사 현황 보기</a></div>`;
+}
+
+const CIRCLED =["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨"];
+function renderScoring(sc) {
+  if (!sc)  // 배점표 기능 이전에 만든 결과
+    return `<div class="card"><p class="muted" style="margin:0">📊 평가 배점표는 [🔄 다시 추천]을 하면 함께 정리됩니다.</p></div>`;
+  if (!sc.found || !(sc.rows || []).length) return "";
+  // 같은 평가부문이 연속되면 첫 행에만 rowspan으로 표시
+  const rows = sc.rows;
+  const span = rows.map((r, i) => {
+    if (i && r.area === rows[i - 1].area) return 0;
+    let n = 1;
+    while (i + n < rows.length && rows[i + n].area === r.area) n++;
+    return n;
+  });
+  const hasArea = rows.some(r => r.area);
+  return `
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:10px">
+      <h2 style="margin:0">📊 평가 배점표</h2>
+      <span class="muted">${[sc.ratio && sc.ratio !== "명시 없음" ? esc(sc.ratio) : "", sc.source ? `근거: ${esc(sc.source)}` : ""].filter(Boolean).join(" · ")}</span>
+    </div>
+    <table class="grid score">
+      <thead><tr>${hasArea ? `<th style="width:16%">평가부문</th>` : ""}<th style="width:22%">평가항목</th><th style="width:8%">배점</th><th>평가 기준</th><th style="width:12%">연계 전략</th></tr></thead>
+      <tbody>${rows.map((r, i) => `
+        <tr>${hasArea && span[i] ? `<td class="item" rowspan="${span[i]}">${esc(r.area || "-")}</td>` : ""}
+          <td>${esc(r.item)}</td><td class="pts">${esc(r.points)}</td><td>${esc(r.criteria)}</td>
+          <td>${(r.strategies || []).filter(n => n >= 1 && n <= 9).map(n => `<span class="slink" title="${esc((data.strategies[n - 1] || {}).title || "")}">${CIRCLED[n - 1]}</span>`).join(" ")}</td></tr>`).join("")}
+      </tbody>
+      ${sc.total ? `<tfoot><tr><td colspan="${hasArea ? 2 : 1}"><b>합계</b></td><td class="pts"><b>${esc(sc.total)}</b></td><td colspan="2"></td></tr></tfoot>` : ""}
+    </table>
+    <p class="muted" style="margin:8px 0 0">연계 전략 번호는 위 핵심 전략 카드 번호입니다. 마우스를 올리면 전략명이 보입니다.</p>
+  </div>`;
+}
+
+function loading(msg) {
+  const box = document.getElementById("sbox");
+  const start = Date.now();
+  box.innerHTML = `<div class="card" style="text-align:center;padding:40px"><div class="spinner"></div>
+    <div>${msg}</div><div class="muted" id="selapsed">다른 화면으로 이동해도 계속 진행됩니다</div></div>`;
+  const t = setInterval(() => {
+    const el = document.getElementById("selapsed");
+    if (!el) return clearInterval(t);
+    el.textContent = `경과 ${Math.round((Date.now() - start) / 1000)}초 · 다른 화면으로 이동해도 계속 진행됩니다`;
+  }, 1000);
+  return () => clearInterval(t);
+}
+
+async function generate(force) {
+  const stop = loading(force ? "최신 분석을 반영해 전략을 다시 추천받는 중..." : "Claude가 이 사업의 핵심 추진 전략을 정리하는 중...");
+  try {
+    data = await api("POST", `/api/projects/${PID}/strategy/generate`, { force: !!force });
+    if (document.getElementById("sbox")) { render(); Router.refreshSidebar(); }
+  } catch (e) {
+    const box = document.getElementById("sbox");
+    if (box) box.innerHTML = `<div class="card"><p class="bad">✖ ${esc(e.message)}</p></div>`;
+  } finally { stop(); }
+}
+
+document.getElementById("regen").onclick = () => {
+  if (data && !confirm("전략을 다시 추천받을까요? 지금 결과는 새 결과로 바뀝니다.")) return;
+  generate(true);
+};
+if (data && !running) render();
+else if (hasDocs) generate(false);  // 결과가 없거나 1단계에서 만드는 중이면 자동으로 받아온다
+else document.getElementById("sbox").innerHTML = `<div class="card"><p class="muted" style="margin:0">1단계에서 RFP 또는 공고서를 올리면 자동으로 추천합니다.</p></div>`;
+</script>
+{% endblock %}

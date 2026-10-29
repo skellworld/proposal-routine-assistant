@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block content %}
+{% set items = (p.step2['items'] if p.step2 else []) %}
+{% set checked = items | selectattr('checked') | list | length %}
+<div class="steps">
+  <a class="card step" href="/workspaces/{{ p.id }}/step1">
+    <h2><span class="num">1</span>RFP 비교 분석</h2>
+    <p class="muted">현재 RFP와 전년도/과거 RFP를 Claude로 비교하고 표 이미지로 확인합니다.</p>
+    {% if p.step1 %}<span class="badge done">완료 · {{ p.step1.analyzed_at }}</span>{% else %}<span class="badge todo">대기</span>{% endif %}
+  </a>
+  <a class="card step" href="/workspaces/{{ p.id }}/step2">
+    <h2><span class="num">2</span>공고서 분석 · 체크리스트</h2>
+    <p class="muted">참가자격·일정·유의사항을 정리하고 준비서류를 체크리스트로 관리합니다. 1단계에서 공고서와 함께 분석하면 자동 생성됩니다.</p>
+    {% if items %}<span class="badge done">구비 {{ checked }} / {{ items | length }}</span>{% else %}<span class="badge todo">대기</span>{% endif %}
+  </a>
+  <a class="card step" href="/workspaces/{{ p.id }}/strategy">
+    <h2><span class="num">3</span>핵심 추진 전략</h2>
+    <p class="muted">{% if p.strategy %}“{{ p.strategy.concept }}” — 추천 전략 {{ p.strategy.strategies | length }}개{% else %}1단계 분석 때 자동으로 추천합니다.{% endif %}</p>
+    {% if p.strategy %}<span class="badge done">추천 완료 · {{ p.strategy.generated_at }}</span>{% else %}<span class="badge todo">대기</span>{% endif %}
+  </a>
+  <a class="card step" href="/workspaces/{{ p.id }}/step3">
+    <h2><span class="num">4</span>목차 PPT 생성</h2>
+    <p class="muted">템플릿을 골라 RFP 목차가 적용된 파워포인트를 만듭니다.</p>
+    {% if p.step3.outputs %}<span class="badge done">{{ p.step3.outputs | length }}개 생성</span>{% else %}<span class="badge todo">대기</span>{% endif %}
+  </a>
+</div>
+
+<div class="row">
+  <div class="card">
+    <h2>워크스페이스 정보</h2>
+    <form id="wsform" class="form-grid">
+      <label>제안 과업명<input type="text" name="name" value="{{ p.name }}" required></label>
+      <label>발주기관<input type="text" name="client" value="{{ p.client or '' }}"></label>
+      <label>제출 마감일<input type="date" name="deadline" value="{{ p.deadline or '' }}"></label>
+      <label>메모<textarea name="memo" rows="3">{{ p.memo or '' }}</textarea></label>
+      <div style="display:flex;justify-content:space-between">
+        <button type="button" class="btn danger" id="del">워크스페이스 삭제</button>
+        <button type="submit" class="btn primary">저장</button>
+      </div>
+    </form>
+  </div>
+  <div class="card">
+    <h2>업로드된 문서</h2>
+    {% for kind, label in kind_labels.items() %}
+      <p><b>{{ label }}</b>: {% if p.files[kind] %}{{ p.files[kind] | join(', ') }}{% else %}<span class="muted">없음</span>{% endif %}</p>
+    {% endfor %}
+    {% if p.step3.outputs %}
+      <h2 style="margin-top:18px">생성된 PPT</h2>
+      <ul class="filelist">{% for f in p.step3.outputs %}<li><span>📊 {{ f }}</span><a class="btn sm" href="/api/projects/{{ p.id }}/output/{{ f | urlencode }}">⬇</a></li>{% endfor %}</ul>
+    {% endif %}
+    <p class="muted">생성일 {{ p.created_at }}</p>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script type="text/x-page">
+const PID = {{ p.id | tojson }};
+document.getElementById("wsform").onsubmit = async e => {
+  e.preventDefault();
+  try {
+    await api("PUT", `/api/projects/${PID}`, Object.fromEntries(new FormData(e.target)));
+    toast("저장했습니다");
+    Router.reload();
+  } catch (err) { toast(err.message, true); }
+};
+document.getElementById("del").onclick = async () => {
+  if (!confirm(`'${ {{ p.name | tojson }} }' 워크스페이스와 업로드 파일·결과물을 모두 삭제할까요?`)) return;
+  try { await api("DELETE", `/api/projects/${PID}`); toast("삭제했습니다"); Router.go("/"); }
+  catch (e) { toast(e.message, true); }
+};
+</script>
+{% endblock %}

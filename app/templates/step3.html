@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>4. 템플릿 기반 목차 PPT 생성</h1>
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <h2 style="margin:0">① 템플릿 선택</h2>
+    <a class="btn" href="/templates">🗂 템플릿 관리에서 추가·편집</a>
+  </div>
+  <div class="tpl-list" id="tpls"></div>
+</div>
+
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+    <h2 style="margin:0">② 목차 확인 · 편집 <span class="muted" id="savestate"></span></h2>
+    <div style="display:flex;gap:6px">
+      <button class="btn" id="extract">🤖 RFP에서 목차 추출</button>
+      <button class="btn" id="addrow">+ 행 추가</button>
+    </div>
+  </div>
+  {% if not p.files.current_rfp %}<p class="muted">⚠ 현재 RFP가 없습니다. <a href="/workspaces/{{ p.id }}/step1">1단계</a>에서 업로드하세요.</p>{% endif %}
+  <div style="margin-bottom:12px">
+    <label class="muted">사업명 (표지·머리말 · Enter로 줄을 나누면 1줄=주 사업명, 2줄=세부 과정명)</label>
+    <textarea id="ptitle" rows="2" placeholder="예: 26년 실전형 사이버훈련장 훈련과정 운영&#10;정보보호제품군 실습훈련"></textarea>
+  </div>
+  <div class="toc-row muted" style="font-size:12px"><span>수준</span><span>번호</span><span>제목</span><span>작성 지침 (발표자 노트에 기재)</span><span></span></div>
+  <div id="toc"></div>
+</div>
+
+<div class="card" style="display:flex;justify-content:space-between;align-items:center">
+  <div><h2 style="margin:0 0 4px">③ PPT 생성</h2><span class="muted">표지 → (조견표) → 목차 → 대제목 간지 → 중·소제목 본문 → (뒷표지) 순으로 구성됩니다. 작성 지침은 발표자 노트에 들어갑니다.</span></div>
+  <button class="btn primary" id="build">▶ PPT 생성</button>
+</div>
+<div class="card" id="outputs"></div>
+{% endblock %}
+{% block scripts %}
+<script type="text/x-page">
+const PID = {{ p.id | tojson }};
+const tpls = {{ tpls | tojson }};
+let s3 = {{ p.step3 | tojson }};
+let toc = s3.toc || [];
+let selected = tpls.some(t => t.file === s3.template) ? s3.template : (tpls[0] || {}).file;
+document.getElementById("ptitle").value = s3.proposal_title || "";
+
+const payload = () => ({ toc, template: selected, proposal_title: document.getElementById("ptitle").value });
+
+// 변경 시 자동 저장 (화면을 옮겨도 편집 내용 유지)
+let saveTimer;
+function autosave() {
+  const st = document.getElementById("savestate");
+  st.textContent = "· 저장 중...";
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(async () => {
+    try { await api("PUT", `/api/projects/${PID}/step3/toc`, payload()); if (st.isConnected) st.textContent = "· 저장됨"; }
+    catch (e) { toast("저장 실패: " + e.message, true); }
+  }, 700);
+}
+
+function renderTpls() {
+  const box = document.getElementById("tpls");
+  if (!tpls.length) { box.innerHTML = `<p class="muted">등록된 템플릿이 없습니다. <a href="/templates">템플릿 관리</a>에서 추가하세요.</p>`; return; }
+  box.innerHTML = tpls.map(t => `
+    <div class="tpl ${t.file === selected ? "on" : ""}" data-t="${esc(t.file)}">
+      <div class="tpl-name">🖼 ${esc(t.name)} ${t.default ? '<span class="badge done">기본</span>' : ""}</div>
+      <div class="muted">${esc(t.slide_size)} · ${t.form ? "📐 양식형" : `레이아웃 ${t.layouts.length}개`}</div>
+      ${t.description ? `<div class="tpl-desc">${esc(t.description)}</div>` : ""}
+    </div>`).join("");
+  box.querySelectorAll(".tpl").forEach(el => el.onclick = () => { selected = el.dataset.t; renderTpls(); autosave(); });
+}
+
+function renderToc() {
+  const box = document.getElementById("toc");
+  if (!toc.length) { box.innerHTML = `<p class="muted">목차가 없습니다. [RFP에서 목차 추출]을 누르거나 행을 직접 추가하세요.</p>`; return; }
+  box.innerHTML = toc.map((t, i) => `
+    <div class="toc-row l${t.level}" data-i="${i}">
+      <select data-k="level">${[1, 2, 3].map(l => `<option value="${l}" ${t.level == l ? "selected" : ""}>${["대", "중", "소"][l - 1]}목차</option>`).join("")}</select>
+      <input data-k="number" value="${esc(t.number)}">
+      <input class="t-title" data-k="title" value="${esc(t.title)}">
+      <textarea data-k="guide" rows="1">${esc(t.guide)}</textarea>
+      <div class="ops">
+        <button class="btn sm" data-op="up" title="위로">↑</button><button class="btn sm" data-op="down" title="아래로">↓</button>
+        <button class="btn sm" data-op="ins" title="아래에 삽입">+</button><button class="btn sm danger" data-op="del" title="삭제">✕</button>
+      </div>
+    </div>`).join("");
+  box.querySelectorAll(".toc-row").forEach(row => {
+    const i = +row.dataset.i;
+    row.querySelectorAll("[data-k]").forEach(inp => inp.onchange = () => {
+      toc[i][inp.dataset.k] = inp.dataset.k === "level" ? +inp.value : inp.value;
+      if (inp.dataset.k === "level") renderToc();
+      autosave();
+    });
+    row.querySelectorAll("[data-op]").forEach(b => b.onclick = () => {
+      const op = b.dataset.op;
+      if (op === "up" && i > 0) [toc[i - 1], toc[i]] = [toc[i], toc[i - 1]];
+      if (op === "down" && i < toc.length - 1) [toc[i + 1], toc[i]] = [toc[i], toc[i + 1]];
+      if (op === "ins") toc.splice(i + 1, 0, { level: toc[i].level, number: "", title: "새 항목", guide: "" });
+      if (op === "del") toc.splice(i, 1);
+      renderToc(); autosave();
+    });
+  });
+}
+
+function renderOutputs() {
+  const outs = s3.outputs || [];
+  document.getElementById("outputs").innerHTML = `<h2>생성된 파일</h2>` + (outs.length
+    ? `<ul class="filelist">${outs.map(f => `<li><span>📊 ${esc(f)}</span><a class="btn sm" href="/api/projects/${PID}/output/${encodeURIComponent(f)}" download>⬇ 다운로드</a></li>`).join("")}</ul>`
+    : `<p class="muted">아직 생성된 파일이 없습니다.</p>`);
+}
+
+document.getElementById("ptitle").onchange = autosave;
+document.getElementById("extract").onclick = async () => {
+  if (toc.length && !confirm("현재 목차를 RFP에서 새로 추출한 목차로 바꿀까요?")) return;
+  try {
+    s3 = { ...s3, ...await runLong("Claude가 RFP에서 제안서 목차를 추출하는 중...", () => api("POST", `/api/projects/${PID}/step3/toc`)) };
+    toc = s3.toc; document.getElementById("ptitle").value = s3.proposal_title || ""; renderToc(); toast(`목차 ${toc.length}개 추출`);
+  } catch (e) {}
+};
+document.getElementById("addrow").onclick = () => { toc.push({ level: 1, number: "", title: "새 항목", guide: "" }); renderToc(); autosave(); };
+document.getElementById("build").onclick = async () => {
+  if (!toc.length) return toast("목차가 비어 있습니다", true);
+  clearTimeout(saveTimer);
+  busy(true, "PPT를 만드는 중...");
+  try {
+    const r = await api("POST", `/api/projects/${PID}/step3/build`, payload());
+    s3.outputs = r.outputs; renderOutputs(); toast("PPT 생성 완료 · 다운로드를 시작합니다");
+    download(`/api/projects/${PID}/output/${encodeURIComponent(r.file)}`);
+    Router.refreshSidebar();
+  } catch (e) { toast(e.message, true); }
+  finally { busy(false); }
+};
+renderTpls(); renderToc(); renderOutputs();
+</script>
+{% endblock %}

@@ -1,0 +1,22 @@
+# 비밀 정보
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# 로컬 데이터 — PC마다 따로 관리 (회사 템플릿만 공유)
+data/*
+!data/templates/
+data/templates/Temp/
+
+# 편집기·도구
+.claude/
+.vscode/
+.idea/
+~$*
+desktop.ini
+Thumbs.db
+*.tmp

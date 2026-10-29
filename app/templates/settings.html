@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}설정 - 제안서 루틴 도우미{% endblock %}
+{% block content %}
+<h1>⚙ 설정</h1>
+
+<div class="card">
+  <h2>Claude 연결 방식</h2>
+  <div class="opt-list" id="opts">
+    {% for val, title, desc in [
+      ('auto', '자동', 'API 키가 있으면 API, 없으면 Pro 계정(Claude Code)을 사용합니다.'),
+      ('cli', 'Pro 계정 (Claude Code)', 'PC에 로그인된 Claude Code로 분석합니다. 추가 비용 없이 Pro 구독 사용량 한도 안에서 동작하며, claude.ai 대화와 한도를 함께 씁니다.'),
+      ('api', 'API 키', '.env의 ANTHROPIC_API_KEY로 호출합니다. 사용량만큼 별도 과금되며 구독 한도와 무관합니다.')] %}
+    <label class="opt {{ 'on' if cfg.backend == val }}">
+      <input type="radio" name="backend" value="{{ val }}" {{ 'checked' if cfg.backend == val }}>
+      <div><div class="t">{{ title }}</div><div class="muted">{{ desc }}</div></div>
+    </label>
+    {% endfor %}
+  </div>
+  <p>현재 사용 중: <b id="active">{{ 'Pro 계정 (Claude Code)' if cfg.active == 'cli' else 'API 키' }}</b></p>
+  <div style="display:flex;gap:8px;align-items:center">
+    <button class="btn primary" id="test">🔌 연결 테스트</button>
+    <span id="testres" class="muted"></span>
+  </div>
+</div>
+
+<div class="row">
+  <div class="card">
+    <h2>Pro 계정 (Claude Code) 상태</h2>
+    <div class="status">
+      <span class="k">설치</span>
+      <span>{% if cfg.cli.installed %}<span class="ok">설치됨</span> <span class="muted">{{ cfg.cli.path }}</span>{% else %}<span class="bad">설치 안 됨</span>{% endif %}</span>
+      <span class="k">로그인</span>
+      <span>{% if cfg.cli.loggedIn %}<span class="ok">로그인됨</span>{% else %}<span class="bad">로그인 필요</span>{% endif %}</span>
+      {% if cfg.cli.loggedIn %}
+      <span class="k">계정</span><span>{{ cfg.cli.email }}</span>
+      <span class="k">구독</span><span>{{ (cfg.cli.subscriptionType or '-') | upper }}</span>
+      {% endif %}
+    </div>
+    {% if not cfg.cli.installed %}
+      <p class="muted">PowerShell에서 아래 명령으로 설치한 뒤 로그인하세요.</p>
+      <code class="cmd">irm https://claude.ai/install.ps1 | iex</code>
+    {% endif %}
+    {% if not cfg.cli.loggedIn %}
+      <p class="muted">PowerShell에서 아래 명령을 실행하면 브라우저가 열립니다. Pro 계정으로 로그인 후 [승인]하고, 코드가 표시되면 PowerShell 창에 붙여넣으세요.</p>
+      <code class="cmd">&amp; "$env:USERPROFILE\.local\bin\claude.exe" auth login</code>
+    {% endif %}
+    <button class="btn sm" id="refresh">↻ 상태 새로 확인</button>
+  </div>
+  <div class="card">
+    <h2>API 키 상태</h2>
+    <div class="status">
+      <span class="k">API 키</span>
+      <span>{% if cfg.api_key_set %}<span class="ok">설정됨</span>{% else %}<span class="muted">없음</span>{% endif %}</span>
+      <span class="k">모델</span><span>{{ cfg.api_model }}</span>
+    </div>
+    <p class="muted">API 키는 프로젝트 폴더의 <code>.env</code> 파일에 <code>ANTHROPIC_API_KEY=...</code> 로 입력하고 서버를 다시 실행하면 적용됩니다. 키는 화면에 표시하지 않습니다.</p>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script type="text/x-page">
+document.querySelectorAll("#opts input").forEach(r => r.onchange = async () => {
+  try {
+    const s = await api("PUT", "/api/settings", { backend: r.value });
+    document.querySelectorAll("#opts .opt").forEach(o => o.classList.toggle("on", o.querySelector("input").checked));
+    document.getElementById("active").textContent = s.active === "cli" ? "Pro 계정 (Claude Code)" : "API 키";
+    Router.refreshSidebar();
+    toast("연결 방식을 저장했습니다");
+  } catch (e) { toast(e.message, true); }
+});
+document.getElementById("test").onclick = async () => {
+  const res = document.getElementById("testres");
+  res.className = "muted"; res.textContent = "테스트 중...";
+  try {
+    const r = await runLong("Claude에 연결하는 중...", () => api("POST", "/api/settings/test"));
+    res.className = "ok";
+    res.textContent = `✔ ${r.backend === "cli" ? "Pro 계정" : "API 키"}로 응답 받음 (${r.seconds}초): "${r.reply}"`;
+  } catch (e) { res.className = "bad"; res.textContent = "✖ " + e.message; }
+};
+document.getElementById("refresh").onclick = () => Router.reload();
+</script>
+{% endblock %}

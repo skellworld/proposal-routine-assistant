@@ -1,0 +1,7 @@
+* text=auto
+# .bat은 CP949 + CRLF 그대로 보존해야 cmd에서 한글이 깨지지 않는다
+*.bat -text
+*.ps1 text eol=crlf
+*.sh text eol=lf
+*.pptx binary
+*.png binary

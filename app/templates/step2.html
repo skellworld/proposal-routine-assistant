@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>2. 공고서 분석 · 준비서류 체크리스트</h1>
+
+<div class="card uploader no-print" data-pid="{{ p.id }}" data-kind="notice" data-label="현재 공고서" data-files='{{ (p.files.notice or []) | tojson }}'>
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px">
+    <div>
+      <h2 style="margin-bottom:4px">현재 입찰 공고서 <span class="muted count"></span></h2>
+      <p class="muted" style="margin:0 0 10px">1단계의 '현재 공고서'와 같은 목록입니다. 1단계에서 공고서와 함께 분석을 실행하면 이 페이지도 자동으로 채워집니다.</p>
+    </div>
+    <button class="btn primary" id="run">▶ 공고서 분석 · 체크리스트 생성</button>
+  </div>
+  <div class="drop">끌어다 놓거나 클릭 (여러 개 가능 · 없으면 현재 RFP로 분석)</div>
+  <input type="file" hidden multiple accept=".pdf,.hwp,.hwpx,.docx,.txt,.md">
+  <ul class="filelist"></ul>
+</div>
+
+<div id="analysis"></div>
+
+<div class="card" id="cl-head">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;gap:10px;flex-wrap:wrap">
+    <h2 style="margin:0">✔ 준비서류 체크리스트 <span class="muted" id="ptext" style="font-size:14px"></span></h2>
+    <div class="no-print" style="display:flex;gap:6px">
+      <select id="filter" style="width:auto"><option value="all">전체 보기</option><option value="todo">미구비만</option><option value="done">구비 완료만</option></select>
+      <button class="btn" onclick="window.print()">🖨 인쇄</button>
+    </div>
+  </div>
+  <div class="progress"><div id="pbar" style="width:0"></div></div>
+  <div id="list" style="margin-top:6px"></div>
+</div>
+
+<div class="card no-print">
+  <h2>항목 직접 추가</h2>
+  <div class="row" style="align-items:center">
+    <select id="ncat" style="width:140px">{% for c in categories %}<option>{{ c }}</option>{% endfor %}</select>
+    <input type="text" id="nname" placeholder="서류명" style="flex:1">
+    <input type="text" id="ndetail" placeholder="설명/유의사항 (선택)" style="flex:2">
+    <button class="btn primary" id="add">+ 추가</button>
+  </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script type="text/x-page">
+const PID = {{ p.id | tojson }};
+const CATS = {{ categories | tojson }};
+let data = {{ (p.step2 or None) | tojson }};
+let items = (data && data.items) || [];
+let saveTimer;
+
+// ---------- 공고서 분석 요약 ----------
+function renderAnalysis() {
+  const box = document.getElementById("analysis");
+  if (!data) {
+    box.innerHTML = `<div class="card"><p class="muted" style="margin:0">아직 분석 결과가 없습니다. 공고서를 올리고 위 버튼을 누르거나, 1단계에서 공고서와 함께 분석을 실행하세요.</p></div>`;
+    return;
+  }
+  const ov = data.overview || {};
+  const val = v => v && v !== "명시 없음" ? esc(v) : '<span class="muted">명시 없음</span>';
+  const list = arr => (arr && arr.length) ? `<ul class="tight">${arr.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : '<span class="muted">명시 없음</span>';
+  box.innerHTML = `
+  <div class="row">
+    <div class="card">
+      <h2>📋 공고서 핵심 ${ov.notice_no && ov.notice_no !== "명시 없음" ? `<span class="muted" style="font-size:14px">${esc(ov.notice_no)}</span>` : ""}</h2>
+      <div class="status">
+        <span class="k">입찰·계약 방식</span><span>${val(ov.bid_method)}</span>
+        <span class="k">참가자격</span><span>${list(ov.qualifications)}</span>
+        <span class="k">공동수급·하도급</span><span>${val(ov.joint_bid)}</span>
+        <span class="k">보증금</span><span>${val(ov.deposit)}</span>
+        <span class="k">제출 방법</span><span>${val(data.submission)}</span>
+      </div>
+    </div>
+    <div class="card">
+      <h2>📅 주요 일정</h2>
+      ${(data.schedule || []).length ? `<table class="grid"><tbody>${data.schedule.map(s => `<tr><td style="width:45%"><b>${esc(s.label)}</b></td><td>${esc(s.date)}</td></tr>`).join("")}</tbody></table>` : '<p class="muted">명시 없음</p>'}
+      ${ov.cautions && ov.cautions.length ? `<h2 style="margin-top:16px">⚠ 유의사항</h2><ul class="tight caution">${ov.cautions.map(x => `<li>${esc(x)}</li>`).join("")}</ul>` : ""}
+    </div>
+  </div>
+  ${data.generated_at ? `<p class="muted" style="margin:-8px 0 14px 4px">분석: ${esc(data.generated_at)} · 기준 문서: ${esc((data.source || []).join(", "))}</p>` : ""}`;
+}
+
+// ---------- 체크리스트 ----------
+function save(immediate) {
+  clearTimeout(saveTimer);
+  const doSave = () => api("PUT", `/api/projects/${PID}/checklist`, { items }).catch(e => toast("저장 실패: " + e.message, true));
+  if (immediate) doSave(); else saveTimer = setTimeout(doSave, 600);
+}
+
+function progress() {
+  const total = items.length, done = items.filter(i => i.checked).length;
+  const pct = total ? Math.round(done * 100 / total) : 0;
+  document.getElementById("pbar").style.width = pct + "%";
+  document.getElementById("ptext").textContent = total ? `구비 ${done} / ${total} (${pct}%) · 필수 미구비 ${items.filter(i => i.required !== false && !i.checked).length}건` : "";
+}
+
+function renderList() {
+  const f = document.getElementById("filter").value;
+  const box = document.getElementById("list");
+  if (!items.length) {
+    box.innerHTML = `<p class="muted">체크리스트가 없습니다. 분석을 실행하거나 아래에서 직접 추가하세요.</p>`;
+    progress(); return;
+  }
+  const cats = [...CATS, ...new Set(items.map(i => i.category).filter(c => !CATS.includes(c)))];
+  box.innerHTML = cats.map(cat => {
+    const rows = items.filter(i => i.category === cat && (f === "all" || (f === "done") === !!i.checked));
+    if (!rows.length) return "";
+    return `<div class="cl-cat">${esc(cat)}</div>` + rows.map(i => `
+      <div class="cl-item ${i.checked ? "checked" : ""}" data-id="${esc(i.id)}">
+        <input type="checkbox" ${i.checked ? "checked" : ""}>
+        <div>
+          <div class="cl-name">${esc(i.name)}${i.required === false ? '<span class="tag opt">선택</span>' : '<span class="tag">필수</span>'}</div>
+          ${i.detail ? `<div class="cl-meta">${esc(i.detail)}</div>` : ""}
+          <div class="cl-meta">${[i.format, i.issuer, i.source].filter(x => x && x !== "명시 없음").map(esc).join(" · ")}</div>
+        </div>
+        <textarea placeholder="메모 (담당자, 발급일 등)">${esc(i.memo || "")}</textarea>
+        <button class="btn sm danger del" title="삭제">✕</button>
+      </div>`).join("");
+  }).join("");
+  box.querySelectorAll(".cl-item").forEach(row => {
+    const it = items.find(i => i.id === row.dataset.id);
+    row.querySelector("input").onchange = e => { it.checked = e.target.checked; row.classList.toggle("checked", it.checked); progress(); save(true); setTimeout(() => Router.refreshSidebar(), 300); };
+    row.querySelector("textarea").oninput = e => { it.memo = e.target.value; save(); };
+    row.querySelector(".del").onclick = () => { if (confirm(`'${it.name}' 항목을 삭제할까요?`)) { items = items.filter(x => x !== it); renderList(); save(true); } };
+  });
+  progress();
+}
+
+initUploaders();
+renderAnalysis();
+renderList();
+document.getElementById("filter").onchange = renderList;
+document.getElementById("add").onclick = () => {
+  const name = document.getElementById("nname").value.trim();
+  if (!name) return toast("서류명을 입력하세요", true);
+  items.push({ id: Math.random().toString(16).slice(2, 10), category: document.getElementById("ncat").value, name,
+    detail: document.getElementById("ndetail").value.trim(), format: "", issuer: "", source: "직접 추가",
+    required: true, checked: false, memo: "", custom: true });
+  document.getElementById("nname").value = ""; document.getElementById("ndetail").value = "";
+  renderList(); save(true);
+};
+document.getElementById("run").onclick = async () => {
+  if (items.some(i => i.checked) && !confirm("다시 분석해도 같은 서류명의 체크·메모와 직접 추가한 항목은 유지됩니다. 진행할까요?")) return;
+  try {
+    clearTimeout(saveTimer);
+    data = await runLong("Claude가 공고서를 분석하는 중...", () => api("POST", `/api/projects/${PID}/step2/generate`));
+    items = data.items || [];
+    renderAnalysis(); renderList();
+    Router.refreshSidebar();
+    toast(`공고서 분석 완료 · 서류 ${items.length}건`);
+  } catch (e) {}
+};
+</script>
+{% endblock %}
