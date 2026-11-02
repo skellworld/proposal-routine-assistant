@@ -98,7 +98,8 @@ def cli_status() -> dict:
         return {"installed": False, "loggedIn": False}
     try:
         r = subprocess.run([exe, "auth", "status"], capture_output=True, text=True, encoding="utf-8",
-                           timeout=30, env=_cli_env())
+                           timeout=30, env=_cli_env(),
+                           creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
         info = json.loads(r.stdout or "{}")
     except (subprocess.SubprocessError, json.JSONDecodeError, OSError) as e:
         return {"installed": True, "loggedIn": False, "error": str(e), "path": exe}

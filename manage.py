@@ -170,7 +170,8 @@ def cmd_start(args) -> None:
     log.flush()
     kw = {"cwd": ROOT, "stdout": log, "stderr": subprocess.STDOUT, "stdin": subprocess.DEVNULL}
     if WIN:
-        kw["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS
+        # DETACHED_PROCESS면 자식 콘솔 프로그램(claude.exe 등)이 새 창을 띄우므로 숨은 콘솔을 준다
+        kw["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.CREATE_NO_WINDOW
     else:
         kw["start_new_session"] = True
     env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
