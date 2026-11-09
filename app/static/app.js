@@ -128,7 +128,37 @@ document.addEventListener("click", e => {
   Router.go(a.href);
 });
 window.addEventListener("popstate", () => Router.go(location.href, { push: false }));
-document.addEventListener("DOMContentLoaded", () => Router.runPageScripts());
+document.addEventListener("DOMContentLoaded", () => { Router.runPageScripts(); Jobs.watch(); });
+
+// ---------------- 백그라운드 분석 알림 ----------------
+// 어느 페이지에 있든 진행 중인 RFP 분석이 끝나면 알리고 사이드바를 갱신한다.
+const Jobs = {
+  _known: new Map(),  // pid -> 워크스페이스 이름
+  _timer: null,
+
+  watch() {
+    if (!this._timer) this._check();
+  },
+
+  async _check() {
+    this._timer = null;
+    let list;
+    try { list = (await api("GET", "/api/jobs")).filter(j => j.kind === "analyze"); } catch (e) { list = null; }
+    if (list) {
+      const now = new Map(list.map(j => [j.pid, j.name]));
+      for (const [pid, name] of this._known) {
+        if (now.has(pid)) continue;
+        // 해당 1단계 화면을 보고 있으면 그 화면이 결과를 직접 표시한다
+        if (location.pathname !== `/workspaces/${pid}/step1`) {
+          toast(`'${name}' RFP 분석이 끝났습니다 — 1단계에서 확인하세요`);
+          Router.refreshSidebar();
+        }
+      }
+      this._known = now;
+    }
+    if (!list || list.length) this._timer = setTimeout(() => this._check(), 5000);
+  },
+};
 
 // ---------------- 워크스페이스 생성 대화상자 ----------------
 const App = {

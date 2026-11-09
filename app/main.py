@@ -72,7 +72,8 @@ def _files(p: dict, kind: str) -> list[Path]:
 def _render(request: Request, name: str, **ctx) -> HTMLResponse:
     return templates.TemplateResponse(
         request, name, {"kind_labels": KIND_LABELS, "workspaces": storage.list_projects(),
-                        "backend": claude_client.active_backend(), **ctx}
+                        "backend": claude_client.active_backend(),
+                        "analyzing": {pid for pid in list(_analyze_jobs) if _analyze_running(pid)}, **ctx}
     )
 
 
@@ -152,7 +153,7 @@ def workspace_home(request: Request, pid: str):
 
 @app.get("/workspaces/{pid}/step1", response_class=HTMLResponse)
 def step1_page(request: Request, pid: str):
-    return _render(request, "step1.html", p=_project(pid), active="step1")
+    return _render(request, "step1.html", p=_project(pid), active="step1", analyze=_analyze_state(pid))
 
 
 @app.get("/workspaces/{pid}/step2", response_class=HTMLResponse)
@@ -250,13 +251,70 @@ def delete_file(pid: str, kind: str, name: str):
     return p["files"]
 
 
-# ---------------- 단계 1 ----------------
+# ---------------- 단계 1 (백그라운드 작업 — 페이지를 떠나도 계속 진행) ----------------
+_analyze_jobs: dict = {}  # pid -> {"future", "started_at", "notice"}
+
+
+def _analyze_running(pid: str) -> bool:
+    j = _analyze_jobs.get(pid)
+    return bool(j and not j["future"].done())
+
+
+def _analyze_state(pid: str) -> dict:
+    j = _analyze_jobs.get(pid)
+    if not j:
+        return {"running": False}
+    f = j["future"]
+    st = {"running": not f.done(), "started_at": j["started_at"], "notice": j["notice"]}
+    if f.done():
+        e = f.exception()
+        if e is None:
+            st["result"] = f.result()
+        elif isinstance(e, HTTPException):
+            st["error"] = e.detail
+        elif isinstance(e, (ClaudeError, ExtractError, ValueError)):
+            st["error"] = str(e)
+        else:
+            st["error"] = f"분석 중 오류가 발생했습니다: {e}"
+    return st
+
+
 @app.post("/api/projects/{pid}/step1/analyze")
 def step1_analyze(pid: str):
     p = _project(pid)
     docs = {k: _files(p, k) for k in storage.FILE_KINDS}
     if not docs["current_rfp"] and not docs["notice"]:
         raise HTTPException(400, "현재 RFP 또는 현재 공고서를 먼저 업로드하세요.")
+    with _jobs_lock:
+        if not _analyze_running(pid):
+            _analyze_jobs[pid] = {"future": _bg.submit(_run_analyze, pid), "started_at": time.time(),
+                                  "notice": bool(docs["notice"])}
+    return _analyze_state(pid)
+
+
+@app.get("/api/projects/{pid}/step1/status")
+def step1_status(pid: str):
+    _project(pid)
+    return _analyze_state(pid)
+
+
+@app.get("/api/jobs")
+def running_jobs():
+    """사이드바·알림용: 진행 중인 분석 작업 목록."""
+    out = []
+    for pid in list(_analyze_jobs):
+        if _analyze_running(pid):
+            out.append({"pid": pid, "kind": "analyze"})
+    for pid in list(_strategy_jobs):
+        if _strategy_running(pid):
+            out.append({"pid": pid, "kind": "strategy"})
+    names = {w["id"]: w["name"] for w in storage.list_projects()}
+    return [{**j, "name": names.get(j["pid"], "")} for j in out]
+
+
+def _run_analyze(pid: str) -> dict:
+    p = _project(pid)
+    docs = {k: _files(p, k) for k in storage.FILE_KINDS}
     # 핵심 추진 전략은 백그라운드에서 따로 만든다 (3단계 페이지에서 결과를 받음)
     _strategy_job(pid, force=True)
     # 현재 공고서가 있으면 공고서 분석·체크리스트도 동시에 생성한다

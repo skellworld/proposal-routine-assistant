@@ -20,7 +20,7 @@
         {% set items = (w.step2['items'] if w.step2 else []) %}
         {% set dd = d_day(w.deadline) if w.deadline else '' %}
         <a href="/workspaces/{{ w.id }}" class="ws {{ 'on' if p and p.id == w.id }}">
-          <span class="ws-name">{{ w.name }}</span>
+          <span class="ws-name">{% if w.id in analyzing %}<span class="ws-busy" title="RFP 분석 중 (백그라운드)"></span>{% endif %}{{ w.name }}</span>
           <span class="ws-sub">
             <span class="dots" title="1.RFP분석 / 2.체크리스트 / 3.추진전략 / 4.목차PPT">
               <i class="{{ 'ok' if w.step1 }}"></i><i class="{{ 'ok' if items and (items | selectattr('checked') | list | length) == (items | length) else ('half' if items) }}"></i><i class="{{ 'ok' if w.strategy }}"></i><i class="{{ 'ok' if w.step3 and w.step3.outputs }}"></i>

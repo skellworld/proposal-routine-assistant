@@ -41,6 +41,7 @@
   <span class="muted" id="runhint"></span>
   <button class="btn primary" id="run">▶ 분석 실행</button>
 </div>
+<div id="jobstatus"></div>
 <div id="checkstatus" style="margin-bottom:18px"></div>
 <div id="result"></div>
 {% endblock %}
@@ -120,17 +121,58 @@ function renderCheckStatus(c, st) {
        <a class="btn sm" href="/workspaces/${PID}/step2">2단계에서 다시 실행 →</a></div>`);
 }
 
-document.getElementById("run").onclick = async () => {
+// 분석은 서버 백그라운드 작업으로 돈다 — 다른 페이지로 이동해도 계속되고, 돌아오면 진행 상황을 이어서 보여준다
+const jobBox = document.getElementById("jobstatus");
+const runBtn = document.getElementById("run");
+let job = {{ analyze | tojson }};
+
+function renderJob() {
+  runBtn.disabled = job.running;
+  if (!job.running) {
+    jobBox.innerHTML = job.error ? `<div class="notice-done notice-err" style="margin-bottom:18px"><span>⚠ 마지막 분석이 실패했습니다: ${esc(job.error)}</span></div>` : "";
+    return;
+  }
+  const sec = Math.max(0, Math.round(Date.now() / 1000 - job.started_at));
+  const what = job.notice ? "RFP·공고서 비교 분석과 체크리스트 생성" : "RFP·공고서 비교 분석";
+  jobBox.innerHTML = `<div class="job-card"><div class="spinner"></div><div class="job-text">
+    <b>Claude가 ${what}을 하는 중입니다</b> · 경과 ${Math.floor(sec / 60)}분 ${sec % 60}초<br>
+    <span class="muted">백그라운드에서 진행되므로 다른 페이지로 이동하거나 다른 작업을 해도 됩니다. 끝나면 알려드립니다.</span></div></div>`;
+}
+
+function finishJob(st) {
+  job = st;
+  renderJob();
+  if (st.error) return toast("분석 실패: " + st.error, true);
+  const { checklist, strategy, ...rest } = st.result;
+  data = rest;
+  renderResult();
+  renderCheckStatus(checklist, strategy);
+  Router.refreshSidebar();
+  toast(checklist && checklist.ok ? "분석 완료 · 체크리스트도 생성됨" : "분석 완료");
+}
+
+async function poll() {
+  const tick = setInterval(() => { if (!document.contains(jobBox)) clearInterval(tick); else renderJob(); }, 1000);
+  while (document.contains(jobBox)) {  // 페이지를 떠나면 이 화면의 폴링만 멈춘다 (작업은 계속)
+    await new Promise(r => setTimeout(r, 3000));
+    if (!document.contains(jobBox)) break;
+    let st;
+    try { st = await api("GET", `/api/projects/${PID}/step1/status`); } catch (e) { continue; }
+    if (!st.running) { clearInterval(tick); finishJob(st); break; }
+  }
+}
+
+runBtn.onclick = async () => {
   try {
-    const msg = hasCurrentNotice ? "Claude가 RFP·공고서 비교 분석과 체크리스트 생성을 함께 하는 중..." : "Claude가 RFP·공고서를 비교 분석하는 중...";
-    const r = await runLong(msg, () => api("POST", `/api/projects/${PID}/step1/analyze`));
-    const { checklist, strategy, ...rest } = r;
-    data = rest;
-    renderResult();
-    renderCheckStatus(checklist, strategy);
+    job = await api("POST", `/api/projects/${PID}/step1/analyze`);
+    renderJob();
     Router.refreshSidebar();
-    toast(checklist && checklist.ok ? "분석 완료 · 체크리스트도 생성됨" : "분석 완료");
-  } catch (e) {}
+    Jobs.watch();
+    poll();
+  } catch (e) { toast(e.message, true); }
 };
+
+renderJob();
+if (job.running) poll();
 </script>
 {% endblock %}
