@@ -271,7 +271,10 @@ def cmd_update(args) -> None:
     else:
         cmd_setup(args)
     if alive(args.port):
-        cmd_restart(args)
+        # 메모리에 올라온 건 pull 이전 코드이므로, 새로 받은 manage.py로 재시작한다
+        r = subprocess.run([sys.executable, str(ROOT / "manage.py"), "restart", "--port", str(args.port)])
+        if r.returncode:
+            fail("재시작 실패 — python manage.py logs 60으로 원인을 확인하세요.")
     say("[완료] 업데이트가 끝났습니다.")
 
 
