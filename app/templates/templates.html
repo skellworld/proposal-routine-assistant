@@ -13,7 +13,7 @@
     <div style="flex:2 1 360px;display:flex;flex-direction:column;gap:8px">
       <input type="text" id="tname" placeholder="표시 이름 (예: 2026 회사 표준 제안서)">
       <textarea id="tdesc" rows="2" placeholder="설명 — 비워두면 업로드할 때 템플릿을 분석해 자동으로 입력합니다 (나중에 수정 가능)"></textarea>
-      <label class="chk"><input type="checkbox" id="tstruct" checked>
+      <label class="chk"><input type="checkbox" id="tstruct" checked data-ai>
         업로드 후 <b>양식으로 자동 구조화</b> — Claude가 표지·목차·간지·본문 슬라이드를 고르고 글자 자리를 {% raw %}{{토큰}}{% endraw %}으로 바꿉니다 (약 30초~1분)</label>
       <div style="text-align:right"><button class="btn primary" id="tup" disabled>⬆ 등록</button></div>
     </div>
@@ -143,7 +143,7 @@ function render() {
       <div class="tcard-ops">
         ${t.form ? "" : '<button class="btn primary sm" data-op="save">💾 저장</button>'}
         ${t.default ? "" : '<button class="btn sm" data-op="default">⭐ 기본으로 지정</button>'}
-        ${t.builtin ? "" : `<button class="btn sm ${t.form ? "" : "primary"}" data-op="structure">🤖 ${t.structured ? "다시 구조화" : "양식으로 구조화"}</button>`}
+        ${t.builtin ? "" : `<button class="btn sm ${t.form ? "" : "primary"}" data-op="structure" data-ai ${aiOn() ? "" : "disabled title=\"AI 연결이 필요합니다\""}>🤖 ${t.structured ? "다시 구조화" : "양식으로 구조화"}</button>`}
         <button class="btn sm" data-op="sample">🧪 샘플 생성</button>
         <a class="btn sm" href="/api/templates/${f}/download" download>⬇ ${t.form && t.form.kind === "token" ? "양식 다운로드" : "파일 다운로드"}</a>
         ${t.has_original ? `<a class="btn sm" href="/api/templates/${f}/original" download>⬇ 원본</a>` : ""}

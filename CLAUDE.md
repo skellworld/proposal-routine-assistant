@@ -16,17 +16,23 @@ Windows에서 `python`이 없으면 `py manage.py ...`.
 | 상태 / 로그 | `python manage.py status`, `python manage.py logs 80` |
 | 종료 | `python manage.py stop` |
 | 최신 코드 받기 | `python manage.py update` |
+| 외부 접속 열기/닫기 | `python manage.py tunnel start` / `tunnel stop` / `tunnel status` (cloudflared 필요) |
 
 - `run.bat`/`setup.bat`/`update.bat`은 사람이 더블클릭하는 용도. 에이전트는 manage.py를 쓴다(run.bat은 창을 붙잡는다).
 - 화면 변경 후 브라우저 캐시 때문에 안 보이면 사용자에게 Ctrl+F5를 안내한다(서버는 no-cache 헤더를 보낸다).
-- Claude 연결: `.env`의 `ANTHROPIC_API_KEY`(API 방식) 또는 Claude Code CLI 로그인(Pro/Max 구독, `claude auth login`).
-  API 키·비밀번호는 사용자가 직접 입력한다. 대신 입력하지 않는다.
+- 팀 다중 사용자 서버: 모든 화면은 로그인 필요. 계정이 없으면 `/setup`(서버 PC 직접 접속에서만 관리자 생성),
+  로그인 후 AI 연결 전이면 `/welcome`. AI는 사용자마다 `⚙ 내 AI 연결`에서 본인 Claude 또는 ChatGPT API 키로 설정한다
+  ('이 PC의 Pro 계정'은 서버 PC 직접 접속일 때만). API 키·비밀번호·계정은 사용자가 직접 입력한다. 대신 입력하지 않는다.
+- 외부 접속은 Cloudflare Tunnel로만 연다(서버는 127.0.0.1 바인딩 유지). 공개 주소를 여는 것은 사용자 확인 후에.
 
 ## 구조
 ```
 app/main.py            라우트(페이지 + /api/*), 전략 백그라운드 작업 관리
 app/analysis.py        단계별 Claude 프롬프트·JSON 스키마 (RFP 비교, 체크리스트, 전략+배점표, 목차)
-app/claude_client.py   call_json(): API(anthropic SDK) 또는 CLI(claude -p --json-schema) 백엔드
+app/auth.py            계정·세션 쿠키·사용자별 AI 설정(암호화 키) — data/users.json, data/secret.key
+app/cli_runner.py      Claude Code CLI 실행(표준 라이브러리 전용). 팀원 PC 실행기(proposal-worker.py로 배포)와 서버가 공용
+app/claude_client.py   call_json(): 요청 사용자의 설정(contextvar)으로 Anthropic / OpenAI / 서버 CLI / 팀원 실행기(worker 대기열) 호출.
+                       스레드로 넘길 때는 claude_client.bound(fn)으로 감싸야 설정이 이어진다
 app/extractors.py      PDF/DOCX/HWPX/HWP/TXT 텍스트 추출
 app/pptx_*.py          PPT 생성 — pptx_token(노트 마커 #표지 등 + {{토큰}}) > pptx_form(힌트 텍스트) > 레이아웃
 app/template_struct.py 임의 PPT → 토큰형 양식 자동 구조화 (Claude 비전)
@@ -38,8 +44,10 @@ data/                  런타임 데이터. git에는 data/templates/만 포함
 ```
 
 ## 주의
+- AI를 호출하는 버튼·입력을 새로 만들면 `data-ai` 속성을 붙이고(AI 연결 안 함이면 자동으로 꺼짐), 해당 POST 경로를 main.py의 `AI_PATHS`에 추가한다.
 - `.bat` 파일은 **CP949 + CRLF, chcp 없이** 저장해야 cmd에서 한글이 깨지지 않는다(.gitattributes에서 -text).
 - 이 폴더가 Google 드라이브 동기화 폴더일 수 있어 venv는 사용자 홈에 둔다.
 - Jinja에서 `p.step2.items`는 dict.items로 해석된다 → `p.step2['items']`.
 - 템플릿 안의 `{{토큰}}` 설명은 `{% raw %}`로 감싼다.
-- 커밋하지 않는 것: `.env`, `data/projects/`, `data/company.json`, `data/settings.json` (회사·고객 정보).
+- 커밋하지 않는 것: `.env`, `data/projects/`, `data/company.json`, `data/users.json`, `data/secret.key` (회사·고객·계정 정보).
+- `data/secret.key`를 지우면 저장된 API 키를 복호화할 수 없어 모든 사용자가 키를 다시 입력해야 하고, 세션도 끊긴다.

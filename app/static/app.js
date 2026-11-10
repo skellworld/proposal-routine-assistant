@@ -6,6 +6,9 @@ async function api(method, url, body) {
   const res = await fetch(url, opt);
   const ct = res.headers.get("content-type") || "";
   const data = ct.includes("json") ? await res.json() : await res.text();
+  // 세션이 끝났거나 최초 설정이 남아 있으면 해당 화면으로 보낸다
+  if (res.status === 401 && !url.startsWith("/api/auth/") && !url.startsWith("/api/setup")) location.href = "/login";
+  if (res.status === 403 && data && /AI 연결 설정/.test(data.detail || "")) location.href = "/welcome";
   if (!res.ok) throw new Error((data && data.detail) || `오류 (${res.status})`);
   return data;
 }
@@ -34,6 +37,33 @@ async function runLong(msg, fn) {
   try { return await fn(); }
   catch (e) { toast(e.message, true); throw e; }
   finally { clearInterval(timer); sub.textContent = ""; busy(false); }
+}
+
+// ---------------- AI 연결 여부에 따른 버튼 잠금 ----------------
+// AI가 필요한 버튼·입력에는 data-ai 속성을 붙인다. AI 연결 안 함이면 꺼지고 본문 위에 안내가 붙는다.
+function aiOn() {
+  const f = document.getElementById("ai-flag");
+  return !f || f.dataset.on === "1";
+}
+
+function applyAiGuard() {
+  if (aiOn()) return;
+  const els = document.querySelectorAll("#content [data-ai]");
+  els.forEach(el => {
+    el.disabled = true;
+    if (el.type === "checkbox") el.checked = false;
+    el.title = "AI가 연결되어 있지 않아 쓸 수 없습니다 — ⚙ 내 AI 연결에서 설정";
+  });
+  const content = document.getElementById("content");
+  if (els.length && content && !content.querySelector(".ai-off-note")) {
+    const note = document.createElement("div");
+    note.className = "notice-done notice-err ai-off-note";
+    note.style.marginBottom = "18px";
+    note.innerHTML = `<span>🔌 AI가 연결되어 있지 않아 AI 분석 기능(분석 실행·추천·추출·구조화)은 쓸 수 없습니다. 파일 업로드·체크리스트·목차 편집·PPT 생성 등은 그대로 쓸 수 있습니다.</span>
+      <a class="btn sm" href="/settings">⚙ AI 연결하기</a>`;
+    const head = content.querySelector(".ws-head");
+    head ? head.after(note) : content.prepend(note);
+  }
 }
 
 function esc(s) {
@@ -108,6 +138,7 @@ const Router = {
       s.textContent = `(() => {\n${old.textContent}\n})();`;
       old.replaceWith(s);
     });
+    applyAiGuard();
   },
 
   _eligible(a, e) {
@@ -128,7 +159,10 @@ document.addEventListener("click", e => {
   Router.go(a.href);
 });
 window.addEventListener("popstate", () => Router.go(location.href, { push: false }));
-document.addEventListener("DOMContentLoaded", () => { Router.runPageScripts(); Jobs.watch(); });
+document.addEventListener("DOMContentLoaded", () => {
+  Router.runPageScripts();
+  if (document.getElementById("sidebar")) Jobs.watch();  // 로그인·최초 설정 화면에서는 돌지 않는다
+});
 
 // ---------------- 백그라운드 분석 알림 ----------------
 // 어느 페이지에 있든 진행 중인 RFP 분석이 끝나면 알리고 사이드바를 갱신한다.
@@ -162,6 +196,10 @@ const Jobs = {
 
 // ---------------- 워크스페이스 생성 대화상자 ----------------
 const App = {
+  async logout() {
+    try { await api("POST", "/api/auth/logout"); } catch (e) {}
+    location.href = "/login";
+  },
   newWorkspace() {
     const dlg = document.getElementById("ws-dialog");
     dlg.querySelector("form").reset();
@@ -265,4 +303,144 @@ function initUploaders(onChange) {
     finally { busy(false); }
   }
   return { uploadMany };
+}
+
+// ---------------- 내 AI 연결 설정 폼 (최초 설정 화면·설정 페이지 공용) ----------------
+// opts: { me, local, cli, saveLabel, onSaved(me) }
+function AiForm(root, opts) {
+  const me = opts.me;
+  const P = {
+    anthropic: { t: "Claude (Anthropic)", d: "본인의 Anthropic API 키로 분석합니다. 사용한 만큼 본인 계정에 과금됩니다.",
+                 link: "https://console.anthropic.com/settings/keys", ph: "sk-ant-...", pick: ids => ids.find(i => i === "claude-opus-5-5") || ids[0] },
+    openai:    { t: "ChatGPT (OpenAI)", d: "본인의 OpenAI API 키로 분석합니다. 사용한 만큼 본인 계정에 과금됩니다.",
+                 link: "https://platform.openai.com/api-keys", ph: "sk-...", pick: ids => ids.find(i => /^gpt-\d/.test(i) && !/mini|nano/.test(i)) || ids[0] },
+  };
+  P.worker = { t: "내 PC의 Claude Code (Pro·Max 구독)", d: "내 PC에서 작은 실행기를 켜 두면, 내가 실행한 분석을 내 PC의 Claude Code가 처리합니다. 결과는 팀 워크스페이스에 그대로 공유됩니다. 분석하는 동안 실행기가 켜져 있어야 합니다." };
+  if (opts.local) P.cli = { t: "서버 PC의 Pro 계정 (Claude Code)", d: "서버 PC에 로그인된 Claude Code 구독으로 분석합니다. 서버 PC에서 직접 접속할 때만 쓸 수 있습니다." };
+  P.none = { t: "AI 연결 안 함", d: "AI 없이 씁니다. 분석 실행·전략 추천·목차 추출·템플릿 구조화 버튼은 꺼지고, 팀원이 만든 분석 결과 보기·파일 업로드·체크리스트·목차 편집·PPT 생성은 그대로 쓸 수 있습니다. 나중에 언제든 연결할 수 있습니다." };
+  let provider = me.ai.provider && P[me.ai.provider] ? me.ai.provider : "anthropic";
+  let models = [];
+
+  root.innerHTML = `
+    <div class="opt-list">${Object.entries(P).map(([k, p]) => `
+      <label class="opt"><input type="radio" name="ai-provider" value="${k}">
+        <div><div class="t">${p.t}</div><div class="muted">${p.d}</div></div></label>`).join("")}</div>
+    <div class="ai-key form-grid" style="margin-top:16px">
+      <label><span>API 키 <span class="ai-link"></span></span>
+        <div class="key-row"><input type="password" class="ai-keyin" autocomplete="off">
+          <button type="button" class="btn ai-check">키 확인</button></div></label>
+      <label>모델<select class="ai-model"><option value="">먼저 [키 확인]을 눌러 주세요</option></select></label>
+      <p class="muted" style="margin:0">Claude Pro·ChatGPT Plus 같은 채팅 구독과 API 결제는 별개입니다. API 콘솔에서 결제 수단(크레딧)을 등록해야 키가 동작합니다.
+        키는 서버에 암호화해 저장하고, 본인이 실행한 분석에만 씁니다.</p>
+    </div>
+    <div class="ai-cli" style="margin-top:16px"></div>
+    <div class="ai-worker" style="margin-top:16px">
+      <div class="status"><span class="k">내 PC 실행기</span><span class="ai-wstat muted">확인 중...</span></div>
+      <ol class="worker-steps">
+        <li><b>내 PC에 Claude Code 설치·로그인</b> (이미 쓰고 있으면 건너뛰기)
+          <code class="cmd">irm https://claude.ai/install.ps1 | iex</code>
+          <code class="cmd">claude auth login</code></li>
+        <li><b>실행기 내려받기</b> — Python 3.9 이상 필요 · <a href="/api/me/worker/script" download>⬇ proposal-worker.py</a></li>
+        <li><b>연결 토큰 발급 후 실행</b> — 내려받은 폴더의 터미널에서 아래 명령을 실행하고 창을 켜 두세요.
+          <div style="margin:6px 0"><button type="button" class="btn sm ai-token">🔑 토큰 발급</button>
+            <span class="muted ai-tokinfo"></span></div>
+          <div class="ai-cmd"></div></li>
+      </ol>
+      <p class="muted" style="margin:0">실행기는 서버로 나가는 연결만 쓰므로 내 PC의 방화벽·포트를 열 필요가 없습니다. 분석할 문서 내용이 내 PC로 전달되어 처리됩니다.</p>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center;margin-top:16px">
+      <button type="button" class="btn primary ai-save"></button>
+      <span class="ai-res muted"></span>
+    </div>`;
+  const $ = s => root.querySelector(s);
+  const keyIn = $(".ai-keyin"), sel = $(".ai-model"), res = $(".ai-res");
+
+  function fillModels(ids, current) {
+    models = ids;
+    sel.innerHTML = ids.length ? ids.map(i => `<option>${esc(i)}</option>`).join("") : `<option value="">사용할 수 있는 모델이 없습니다</option>`;
+    sel.value = ids.includes(current) ? current : (P[provider].pick(ids) || "");
+  }
+
+  function render() {
+    root.querySelectorAll(".opt").forEach(o => {
+      const i = o.querySelector("input"); i.checked = i.value === provider; o.classList.toggle("on", i.checked);
+    });
+    const api = provider === "anthropic" || provider === "openai";
+    $(".ai-key").style.display = api ? "" : "none";
+    $(".ai-cli").style.display = provider === "cli" ? "" : "none";
+    $(".ai-worker").style.display = provider === "worker" ? "" : "none";
+    $(".ai-save").textContent = provider === "none" ? "저장 (AI 없이 사용)" : (opts.saveLabel || "저장하고 연결 테스트");
+    if (provider === "worker") {
+      $(".ai-tokinfo").textContent = me.worker_token ? `발급됨 (${me.worker_issued_at}) · 다시 발급하면 이전 토큰은 끊깁니다` : "";
+      checkWorker();
+    } else if (api) {
+      const saved = me.ai.provider === provider && me.ai.key_hint;
+      keyIn.placeholder = saved ? `저장된 키 ${me.ai.key_hint} — 바꾸려면 새 키 입력` : P[provider].ph;
+      $(".ai-link").innerHTML = `· <a href="${P[provider].link}" target="_blank" rel="noopener">키 발급 페이지 ↗</a>`;
+      if (saved && me.ai.model) fillModels([me.ai.model], me.ai.model);
+      else { models = []; sel.innerHTML = `<option value="">먼저 [키 확인]을 눌러 주세요</option>`; }
+    } else if (provider === "cli") {
+      const c = opts.cli || {};
+      $(".ai-cli").innerHTML = `<div class="status"><span class="k">Claude Code</span><span>${c.installed ? '<span class="ok">설치됨</span>' : '<span class="bad">설치 안 됨</span>'}</span>
+        <span class="k">로그인</span><span>${c.loggedIn ? `<span class="ok">로그인됨</span> ${esc(c.email || "")} ${esc((c.subscriptionType || "").toUpperCase())}` : '<span class="bad">로그인 필요</span>'}</span></div>
+        ${c.loggedIn ? "" : `<p class="muted">서버 PC의 PowerShell에서 로그인하세요.</p><code class="cmd">&amp; "$env:USERPROFILE\\.local\\bin\\claude.exe" auth login</code>`}`;
+    }
+  }
+
+  root.querySelectorAll(".opt input").forEach(i => i.onchange = () => { provider = i.value; res.textContent = ""; render(); });
+
+  // 실행기 연결 상태: 이 화면이 열려 있고 '내 PC' 방식을 보고 있는 동안 5초마다 확인
+  let wTimer = null;
+  async function checkWorker() {
+    clearTimeout(wTimer);
+    if (!document.contains(root) || provider !== "worker") return;
+    try {
+      const w = await api("GET", "/api/me/worker");
+      $(".ai-wstat").innerHTML = w.online ? '<span class="ok">● 연결됨</span> — 분석을 내 PC의 Claude Code로 처리할 수 있습니다'
+        : (w.token ? '<span class="bad">● 꺼져 있음</span> — 내 PC에서 실행기를 켜 주세요' : '<span class="muted">토큰을 발급하고 실행기를 켜 주세요</span>');
+    } catch (e) {}
+    wTimer = setTimeout(checkWorker, 5000);
+  }
+  $(".ai-token").onclick = async () => {
+    if (me.worker_token && !confirm("토큰을 다시 발급할까요? 이전 토큰으로 켜 둔 실행기는 연결이 끊깁니다.")) return;
+    try {
+      const r = await api("POST", "/api/me/worker/token");
+      me.worker_token = true; me.worker_issued_at = "방금";
+      $(".ai-tokinfo").textContent = "새 토큰은 이 화면에서 한 번만 보입니다";
+      $(".ai-cmd").innerHTML = `<code class="cmd">python proposal-worker.py --server ${esc(location.origin)} --token ${esc(r.token)}</code>
+        <span class="muted">처음 한 번만 이렇게 실행하면 설정이 저장되어, 다음부터는 <code>python proposal-worker.py</code> 만 실행하면 됩니다.</span>`;
+    } catch (e) { toast(e.message, true); }
+  };
+
+  $(".ai-check").onclick = async () => {
+    res.className = "ai-res muted"; res.textContent = "키 확인 중...";
+    try {
+      const r = await api("POST", "/api/me/ai/models", { provider, key: keyIn.value.trim() });
+      fillModels(r.models, me.ai.provider === provider ? me.ai.model : "");
+      res.className = "ai-res ok"; res.textContent = `✔ 키 확인됨 · 모델 ${r.models.length}개`;
+    } catch (e) { res.className = "ai-res bad"; res.textContent = "✖ " + e.message; }
+  };
+
+  $(".ai-save").onclick = async () => {
+    const usesKey = provider === "anthropic" || provider === "openai";
+    const body = { provider, model: usesKey ? sel.value : "", key: usesKey ? keyIn.value.trim() : "" };
+    if (usesKey && !body.key && !(me.ai.provider === provider && me.ai.key_hint)) return toast("API 키를 입력하세요", true);
+    if (usesKey && !body.model) return toast("[키 확인]을 누르고 모델을 고르세요", true);
+    if (provider === "worker" && !me.worker_token) return toast("먼저 [토큰 발급]을 누르고 내 PC에서 실행기를 켜세요", true);
+    try {
+      const saved = await api("PUT", "/api/me/ai", body);
+      Object.assign(me, saved); keyIn.value = "";
+      if (provider === "none") {  // 연결 테스트 없이 저장만
+        res.className = "ai-res ok"; res.textContent = "✔ 저장됨 — AI 없이 사용합니다";
+        render();
+        return opts.onSaved && opts.onSaved(me);
+      }
+      res.className = "ai-res muted"; res.textContent = "저장됨 · 연결 테스트 중...";
+      const t = await runLong("AI에 연결하는 중...", () => api("POST", "/api/me/ai/test"));
+      res.className = "ai-res ok"; res.textContent = `✔ 연결 성공 (${t.seconds}초): "${t.reply}"`;
+      render();
+      opts.onSaved && opts.onSaved(me);
+    } catch (e) { res.className = "ai-res bad"; res.textContent = "✖ " + e.message; }
+  };
+  render();
 }

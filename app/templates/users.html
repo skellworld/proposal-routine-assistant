@@ -1,0 +1,78 @@
+{% extends "base.html" %}
+{% block title %}사용자 관리 - 제안서 루틴 도우미{% endblock %}
+{% block content %}
+<h1>👥 사용자 관리</h1>
+
+<div class="card">
+  <h2>팀원 추가</h2>
+  <p class="muted">계정을 만들면 임시 비밀번호가 한 번만 표시됩니다. 팀원에게 전달하면, 팀원은 처음 로그인할 때 비밀번호를 바꾸고 본인 AI(Claude 또는 ChatGPT)를 연결합니다.
+    워크스페이스·템플릿·우리 회사 현황은 팀 전체가 함께 봅니다.</p>
+  <form class="row" id="addf" style="align-items:flex-end">
+    <label class="form-grid" style="flex:1 1 160px">아이디<input type="text" name="username" placeholder="영문·숫자 3자 이상" required></label>
+    <label class="form-grid" style="flex:1 1 160px">이름<input type="text" name="name" placeholder="예: 홍길동"></label>
+    <label class="form-grid" style="flex:0 0 130px">역할<select name="role"><option value="member">팀원</option><option value="admin">관리자</option></select></label>
+    <button class="btn primary">+ 계정 만들기</button>
+  </form>
+  <div id="newpw" style="margin-top:12px"></div>
+</div>
+
+<div class="card">
+  <h2>계정 목록</h2>
+  <table class="grid">
+    <thead><tr><th>이름 (아이디)</th><th>역할</th><th>AI 연결</th><th>만든 날</th><th style="width:230px"></th></tr></thead>
+    <tbody>
+    {% for u in users %}
+      <tr data-u="{{ u.username }}">
+        <td><b>{{ u.name }}</b> <span class="muted">({{ u.username }})</span>{% if u.username == me.username %} <span class="badge done">나</span>{% endif %}</td>
+        <td><select class="role" {{ 'disabled' if u.username == me.username }}><option value="member" {{ 'selected' if u.role == 'member' }}>팀원</option><option value="admin" {{ 'selected' if u.role == 'admin' }}>관리자</option></select></td>
+        <td>{% if u.must_change_pw %}<span class="badge todo">첫 로그인 전</span>
+            {% elif u.ai.provider == 'none' %}<span class="badge todo">AI 연결 안 함</span>
+            {% elif u.ai.ready %}<span class="badge done">{{ {'anthropic': 'Claude', 'openai': 'ChatGPT', 'worker': '내 PC Claude', 'cli': '서버 Pro'}[u.ai.provider] }}</span> <span class="muted">{{ u.ai.model }}</span>
+            {% else %}<span class="badge todo">미설정</span>{% endif %}</td>
+        <td class="muted">{{ u.created_at[:10] }}</td>
+        <td style="text-align:right">
+          <button class="btn sm reset">비밀번호 초기화</button>
+          {% if u.username != me.username %}<button class="btn sm danger del">삭제</button>{% endif %}
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+{% block scripts %}
+<script type="text/x-page">
+const showPw = (who, pw) => {
+  document.getElementById("newpw").innerHTML = `<p style="margin:0 0 6px"><b>${esc(who)}</b>의 임시 비밀번호 (이 화면을 벗어나면 다시 볼 수 없습니다):</p>
+    <div class="pw-box">${esc(pw)}</div>`;
+};
+const addf = document.getElementById("addf");
+addf.onsubmit = async e => {
+  e.preventDefault();
+  try {
+    const r = await api("POST", "/api/users", Object.fromEntries(new FormData(addf)));
+    await Router.reload();
+    showPw(r.user.username, r.password);
+    toast("계정을 만들었습니다");
+  } catch (ex) { toast(ex.message, true); }
+};
+document.querySelectorAll("tr[data-u]").forEach(tr => {
+  const u = tr.dataset.u;
+  tr.querySelector(".role").onchange = async ev => {
+    try { await api("PUT", `/api/users/${encodeURIComponent(u)}`, { role: ev.target.value }); toast("역할을 바꿨습니다"); }
+    catch (ex) { toast(ex.message, true); Router.reload(); }
+  };
+  tr.querySelector(".reset").onclick = async () => {
+    if (!confirm(`${u}의 비밀번호를 초기화할까요? 새 임시 비밀번호가 발급되고, 다음 로그인 때 바꾸게 됩니다.`)) return;
+    try { const r = await api("POST", `/api/users/${encodeURIComponent(u)}/reset`); await Router.reload(); showPw(u, r.password); }
+    catch (ex) { toast(ex.message, true); }
+  };
+  const del = tr.querySelector(".del");
+  if (del) del.onclick = async () => {
+    if (!confirm(`${u} 계정을 삭제할까요? 이 사람이 만든 워크스페이스는 그대로 남습니다.`)) return;
+    try { await api("DELETE", `/api/users/${encodeURIComponent(u)}`); Router.reload(); toast("삭제했습니다"); }
+    catch (ex) { toast(ex.message, true); }
+  };
+});
+</script>
+{% endblock %}

@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>시작하기 - 제안서 루틴 도우미</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js"></script>
+</head>
+<body>
+<div class="auth-wrap">
+  <div class="card auth-card" style="width:min(680px,100%)">
+    <div class="brand-lg">👋 {{ me.name }}님, 시작하기 전에 설정해 주세요</div>
+    <p class="muted">분석에 사용할 AI를 연결하거나, AI 없이 쓰려면 'AI 연결 안 함'을 고르세요. 이 설정은 나중에 왼쪽 아래 '⚙ 내 AI 연결'에서 바꿀 수 있습니다.</p>
+    <div class="steps">
+      {% if me.must_change_pw %}<span id="s1" class="on">1. 비밀번호 변경</span>{% endif %}
+      <span id="s2" class="{{ '' if me.must_change_pw else 'on' }}">{{ '2' if me.must_change_pw else '1' }}. AI 연결</span>
+      <span id="s3">{{ '3' if me.must_change_pw else '2' }}. 시작</span>
+    </div>
+
+    {% if me.must_change_pw %}
+    <div id="pw">
+      <h2>임시 비밀번호 바꾸기</h2>
+      <form class="form-grid" id="pwf">
+        <label>현재(임시) 비밀번호<input type="password" name="current" autocomplete="current-password" required></label>
+        <label>새 비밀번호 (8자 이상)<input type="password" name="new" autocomplete="new-password" required></label>
+        <label>새 비밀번호 확인<input type="password" name="new2" autocomplete="new-password" required></label>
+        <button class="btn primary" style="justify-content:center">비밀번호 바꾸고 다음</button>
+      </form>
+    </div>
+    {% endif %}
+
+    <div id="ai" style="{{ 'display:none' if me.must_change_pw }}">
+      <h2>분석에 사용할 AI</h2>
+      <div id="aiform"></div>
+    </div>
+
+    <div id="done" style="display:none;text-align:center;padding:10px 0">
+      <h2>✔ 준비가 끝났습니다</h2>
+      <p class="muted">이제 워크스페이스를 만들고 RFP·공고서를 올려 분석할 수 있습니다.</p>
+      <a class="btn primary" href="/">시작하기 →</a>
+    </div>
+    <p style="margin:16px 0 0;text-align:right"><button class="btn sm" onclick="App.logout()">로그아웃</button></p>
+  </div>
+</div>
+<div id="busy"><div class="box"><div class="spinner"></div><div class="msg"></div><div class="sub muted"></div></div></div>
+<div id="toast"></div>
+<script>
+const ME = {{ me | tojson }};
+const step = (on, done) => { document.querySelectorAll(".steps span").forEach(s => s.className = ""); done.forEach(i => { const e = document.getElementById(i); if (e) e.className = "done"; }); document.getElementById(on).className = "on"; };
+const pwf = document.getElementById("pwf");
+if (pwf) pwf.onsubmit = async e => {
+  e.preventDefault();
+  const d = Object.fromEntries(new FormData(pwf));
+  if (d.new !== d.new2) return toast("새 비밀번호 확인이 일치하지 않습니다", true);
+  try {
+    await api("PUT", "/api/me/password", { current: d.current, new: d.new });
+    document.getElementById("pw").style.display = "none";
+    document.getElementById("ai").style.display = "";
+    step("s2", ["s1"]);
+    toast("비밀번호를 바꿨습니다");
+  } catch (ex) { toast(ex.message, true); }
+};
+AiForm(document.getElementById("aiform"), {
+  me: ME, local: {{ local | tojson }}, cli: {{ cli | tojson }}, saveLabel: "저장하고 연결 테스트",
+  onSaved() {
+    document.getElementById("ai").style.display = "none";
+    document.getElementById("done").style.display = "";
+    step("s3", ["s1", "s2"]);
+  },
+});
+</script>
+</body>
+</html>

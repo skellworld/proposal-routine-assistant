@@ -25,14 +25,44 @@ cd proposal-routine-assistant
 ### 3. 설치
 `setup.bat` 더블클릭 — 가상환경(`%USERPROFILE%\.proposal-helper\venv`)을 만들고 패키지를 설치합니다.
 
-### 4. Claude 연결 (둘 중 하나, 사이드바 **⚙ 설정**에서 선택·연결 테스트)
-- **Pro 계정 (Claude Code)** — 추가 비용 없음, Pro 사용량 한도 공유
-  - 설치: PowerShell에서 `irm https://claude.ai/install.ps1 | iex`
-  - 로그인: `& "$env:USERPROFILE\.local\bin\claude.exe" auth login` → 브라우저에서 승인
-- **API 키** — 사용량만큼 과금: `.env` 파일에 `ANTHROPIC_API_KEY=` 입력
-
-### 5. 실행
+### 4. 실행 · 최초 설정
 `run.bat` 더블클릭 → 브라우저에서 http://127.0.0.1:8000 이 열립니다. 서버 창(검은 창)을 닫으면 종료됩니다.
+
+처음 열면 **관리자 계정 만들기** 화면이 나옵니다(보안상 서버 PC에서 직접 접속할 때만 만들 수 있습니다).
+계정을 만들면 **시작하기** 화면에서 분석에 쓸 AI를 연결합니다. 연결 테스트가 성공해야 다른 메뉴가 열립니다.
+
+| AI 연결 | 설명 |
+|---|---|
+| Claude (Anthropic API 키) | https://console.anthropic.com/settings/keys 에서 발급. 사용한 만큼 본인 계정 과금 |
+| ChatGPT (OpenAI API 키) | https://platform.openai.com/api-keys 에서 발급. 사용한 만큼 본인 계정 과금 |
+| 내 PC의 Claude Code (Pro·Max 구독) | 본인 PC에서 실행기를 켜 두면 본인 Claude Code로 분석. 결과는 팀 워크스페이스에 공유 (아래 참고) |
+| 서버 PC의 Pro 계정 (Claude Code) | 서버 PC에서 직접 접속할 때만 선택 가능. `irm https://claude.ai/install.ps1 \| iex` 설치 후 `claude auth login` |
+
+**내 PC의 Claude Code로 분석하기 (팀원)**
+1. 내 PC에 Python 3.9+와 Claude Code를 설치하고 `claude auth login`으로 로그인합니다.
+2. 웹 `⚙ 내 AI 연결` → '내 PC의 Claude Code' → `proposal-worker.py` 내려받기 → [토큰 발급].
+3. 화면에 나온 명령(`python proposal-worker.py --server <서버주소> --token <토큰>`)을 실행하고 창을 켜 둡니다. 다음부터는 `python proposal-worker.py`만 실행하면 됩니다.
+4. 설정 화면에 '● 연결됨'이 보이면 [저장하고 연결 테스트]. 이후 내가 실행한 분석은 내 PC에서 처리되고 결과는 팀이 함께 봅니다.
+   실행기는 서버로 나가는 연결만 쓰므로 내 PC의 방화벽·포트를 열 필요가 없습니다. 분석하는 동안 실행기가 켜져 있어야 합니다.
+
+Claude Pro·ChatGPT Plus 같은 채팅 구독은 API와 결제가 별개라 팀원 분석에는 쓸 수 없습니다(각 API 콘솔에서 결제 수단 등록 필요).
+키는 서버에 암호화해 저장되며, 각자 실행한 분석에만 쓰입니다.
+
+### 5. 팀원이 외부에서 쓰게 하기 (Cloudflare Tunnel)
+서버 PC에서 앱 서버를 켠 채로 터널을 엽니다. 공유기 포트를 열 필요가 없고 https 주소가 발급됩니다.
+```powershell
+winget install Cloudflare.cloudflared   # 최초 1회
+python manage.py start
+python manage.py tunnel start           # → https://xxxx.trycloudflare.com 주소 출력
+python manage.py tunnel stop            # 외부 접속 끄기
+```
+1. 사이드바 **👥 사용자 관리**에서 팀원 계정을 만들고, 표시된 임시 비밀번호와 외부 주소를 팀원에게 전달합니다.
+2. 팀원은 처음 로그인할 때 비밀번호를 바꾸고 본인 Claude 또는 ChatGPT API 키를 연결합니다.
+3. 워크스페이스·템플릿·우리 회사 현황은 팀이 함께 봅니다.
+
+- 임시 주소(trycloudflare.com)는 터널을 다시 켤 때마다 바뀝니다. **고정 주소**가 필요하면 Cloudflare 계정에 도메인을 연결하고
+  Zero Trust → Networks → Tunnels에서 터널을 만든 뒤(서비스 주소 `http://127.0.0.1:8000`), 발급된 토큰을 `.env`의 `CLOUDFLARE_TUNNEL_TOKEN=`에, 주소를 `PUBLIC_URL=`에 적습니다.
+- 서버 PC가 꺼지거나 절전에 들어가면 외부에서도 접속되지 않습니다.
 
 ### 최신 버전으로 업데이트
 `update.bat` 더블클릭 — `git pull`로 최신 코드를 받고 패키지를 맞춥니다. 이후 `run.bat`을 다시 실행하세요.
@@ -52,6 +82,7 @@ cd proposal-routine-assistant
 python manage.py setup     # 설치
 python manage.py doctor    # 설치·Claude 연결 점검
 python manage.py start     # 백그라운드 실행 (stop / restart / status / logs / update)
+python manage.py tunnel start   # 외부 접속 주소 열기 (stop / status)
 ```
 
 ### macOS / Linux
@@ -60,9 +91,10 @@ python manage.py start     # 백그라운드 실행 (stop / restart / status / l
 ## 저장소에 포함되는 것 / 포함되지 않는 것
 | 포함 | 포함하지 않음 (PC마다 따로) |
 |---|---|
-| 코드·화면·설치 스크립트·명세서 | `.env` (API 키) |
+| 코드·화면·설치 스크립트·명세서 | `.env` (터널 토큰 등) |
 | 회사 PPT 템플릿 (`data/templates/`) | 워크스페이스·업로드 문서·결과물 (`data/projects/`) |
-| | 우리 회사 현황 (`data/company.json`), 설정 (`data/settings.json`) |
+| | 우리 회사 현황 (`data/company.json`) |
+| | 계정·암호화된 API 키 (`data/users.json`), 서버 비밀키 (`data/secret.key`) |
 
 - 새 PC에서는 **🏢 우리 회사 현황**을 다시 입력하세요(기존 PC 화면에서 복사해 붙여 넣으면 됩니다).
 - 템플릿을 새로 올리거나 고친 뒤 다른 PC와 공유하려면 아래처럼 커밋·푸시합니다.

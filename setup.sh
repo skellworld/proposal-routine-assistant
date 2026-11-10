@@ -13,4 +13,4 @@ echo "[2/3] 패키지 설치..."
 echo "[3/3] 설정 파일 준비..."
 [ -f .env ] || cp .env.example .env
 echo
-echo "설치 완료. Claude 연결(Pro 계정 로그인 또는 .env의 ANTHROPIC_API_KEY)을 준비한 뒤 ./run.sh 를 실행하세요."
+echo "설치 완료. ./run.sh 를 실행한 뒤 브라우저에서 관리자 계정을 만들고 AI(Claude 또는 ChatGPT API 키)를 연결하세요."

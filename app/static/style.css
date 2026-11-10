@@ -200,3 +200,21 @@ img.table-img { max-width: 100%; border: 1px solid var(--line); border-radius: 8
   .app { display: block; } body { background: #fff; } main#content { padding: 0; } .card { border: 0; padding: 0; }
   .cl-item { grid-template-columns: 28px 1fr 200px; } .cl-item .del { display: none; }
 }
+
+/* 로그인 · 최초 설정 */
+input[type=password] { font: inherit; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; width: 100%; background: #fff; box-sizing: border-box; }
+.auth-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px 16px; box-sizing: border-box; }
+.auth-card { width: min(560px, 100%); }
+.auth-card .brand-lg { font-size: 22px; font-weight: 800; margin-bottom: 4px; }
+.steps { display: flex; gap: 8px; margin: 14px 0 18px; }
+.steps span { flex: 1; text-align: center; padding: 6px 0; border-radius: 999px; background: #f3f4f6; color: var(--muted); font-size: 13px; font-weight: 700; }
+.steps span.on { background: var(--blue); color: #fff; }
+.steps span.done { background: #dcfce7; color: var(--ok); }
+.key-row { display: flex; gap: 8px; }
+.key-row input { flex: 1; }
+.side-user { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 13px; color: #cbd5e1; padding: 8px 10px 2px; }
+.side-user button { background: none; border: 0; color: #93c5fd; cursor: pointer; font: inherit; font-size: 12px; padding: 0; }
+.pw-box { background: #fef9c3; border: 1px solid #fde68a; border-radius: 8px; padding: 10px 12px; font-family: Consolas, monospace; font-size: 15px; user-select: all; }
+
+.worker-steps { margin: 12px 0; padding-left: 20px; display: flex; flex-direction: column; gap: 10px; font-size: 14px; }
+.worker-steps code.cmd { margin: 4px 0; }

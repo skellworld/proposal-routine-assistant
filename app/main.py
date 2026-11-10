@@ -1,4 +1,5 @@
 """제안서 루틴 도우미 - FastAPI 서버."""
+import re
 import uuid
 from pathlib import Path
 
@@ -7,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
 from fastapi import Body, FastAPI, File, Form, HTTPException, Request, UploadFile  # noqa: E402
-from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse  # noqa: E402
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response  # noqa: E402
 from fastapi.staticfiles import StaticFiles  # noqa: E402
 from fastapi.templating import Jinja2Templates  # noqa: E402
 
@@ -15,7 +16,7 @@ import threading  # noqa: E402
 import time  # noqa: E402
 from concurrent.futures import ThreadPoolExecutor  # noqa: E402
 
-from . import analysis, claude_client, company, settings, storage, tpl_store  # noqa: E402
+from . import analysis, auth, claude_client, company, storage, tpl_store  # noqa: E402
 from .claude_client import ClaudeError  # noqa: E402
 from .extractors import SUPPORTED, ExtractError  # noqa: E402
 from .pptx_builder import SAMPLE_TOC, build_proposal_pptx  # noqa: E402
@@ -35,10 +36,283 @@ KIND_LABELS = {"current_rfp": "현재 RFP", "notice": "현재 공고서", "past_
 
 @app.middleware("http")
 async def _no_stale_cache(request: Request, call_next):
-    # 로컬 앱이므로 브라우저가 항상 최신 화면·CSS·JS를 확인하도록 한다 (변경 없으면 ETag로 304)
+    # 브라우저가 항상 최신 화면·CSS·JS를 확인하도록 한다 (변경 없으면 ETag로 304)
     response = await call_next(request)
     response.headers.setdefault("Cache-Control", "no-cache")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
     return response
+
+
+# ---------------- 로그인·최초 설정 ----------------
+# /api/worker/ 는 쿠키 대신 실행기 토큰(Authorization: Bearer)으로 인증한다
+PUBLIC = ("/static/", "/login", "/setup", "/api/health", "/api/auth/login", "/api/setup", "/api/worker/")
+# 로그인은 했지만 비밀번호 변경·AI 연결 설정 전에도 열 수 있는 경로
+ONBOARDING = ("/welcome", "/api/me", "/api/auth/logout")
+# AI가 있어야 하는 작업 (POST). 'AI 연결 안 함' 사용자는 화면에서 버튼이 꺼지고, 서버도 여기서 막는다
+AI_PATHS = re.compile(r"^/api/(projects/[^/]+/(step1/analyze|strategy/generate|step2/generate|step3/toc)"
+                      r"|templates/[^/]+/structure)$")
+NO_AI_MSG = "AI가 연결되어 있지 않아 이 기능을 쓸 수 없습니다. 왼쪽 아래 '⚙ 내 AI 연결'에서 AI를 연결하세요."
+
+
+def _is_local(request: Request) -> bool:
+    """서버 PC에서 직접 접속했는지. 터널(cloudflared)·프록시를 거친 요청은 전달 헤더가 붙는다."""
+    host = request.client.host if request.client else ""
+    fwd = any(h in request.headers for h in ("cf-connecting-ip", "x-forwarded-for", "forwarded", "cf-ray"))
+    return host in ("127.0.0.1", "::1") and not fwd
+
+
+def _deny(request: Request, status: int, msg: str, to: str):
+    if request.url.path.startswith("/api/"):
+        return JSONResponse({"detail": msg}, status_code=status)
+    return RedirectResponse(to, status_code=303)
+
+
+@app.middleware("http")
+async def _auth(request: Request, call_next):
+    path = request.url.path
+    local = _is_local(request)
+    request.state.local = local
+    request.state.user = user = auth.read_session(request.cookies.get(auth.COOKIE))
+    if user:
+        claude_client.use({**auth.ai_config(user), "local": local, "username": user["username"]})
+    if not path.startswith(PUBLIC):
+        if not auth.has_users():
+            return _deny(request, 401, "최초 설정이 필요합니다.", "/setup")
+        if not user:
+            return _deny(request, 401, "로그인이 필요합니다.", "/login")
+        if not path.startswith(ONBOARDING) and (user.get("must_change_pw") or not auth.ai_ready(user)):
+            return _deny(request, 403, "먼저 내 계정·AI 연결 설정을 마치세요.", "/welcome")
+        if path.startswith(("/users", "/api/users")) and user.get("role") != "admin":
+            return _deny(request, 403, "관리자만 사용할 수 있습니다.", "/")
+        if request.method == "POST" and AI_PATHS.match(path) and not auth.ai_enabled(user):
+            return JSONResponse({"detail": NO_AI_MSG}, status_code=400)
+    return await call_next(request)
+
+
+def _set_cookie(request: Request, resp, u: dict) -> None:
+    https = request.headers.get("x-forwarded-proto") == "https" or "cf-visitor" in request.headers
+    resp.set_cookie(auth.COOKIE, auth.make_session(u), max_age=auth.SESSION_DAYS * 86400,
+                    httponly=True, samesite="lax", secure=https)
+
+
+def _me(request: Request) -> dict:
+    return request.state.user
+
+
+@app.get("/api/health")
+def health():
+    return {"ok": True, "users": auth.has_users()}
+
+
+@app.get("/setup", response_class=HTMLResponse)
+def setup_page(request: Request):
+    if auth.has_users():
+        return RedirectResponse("/login", status_code=303)
+    return templates.TemplateResponse(request, "login.html", {"mode": "setup", "local": request.state.local})
+
+
+@app.post("/api/setup")
+def do_setup(request: Request, data: dict = Body(...)):
+    if auth.has_users():
+        raise HTTPException(400, "이미 설정이 끝났습니다.")
+    if not request.state.local:
+        raise HTTPException(403, "최초 관리자 계정은 서버 PC에서 직접 접속해 만들어야 합니다.")
+    try:
+        u = auth.create(data.get("username", ""), data.get("password", ""), data.get("name", ""), role="admin")
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    resp = JSONResponse({"ok": True, "next": "/welcome"})
+    _set_cookie(request, resp, u)
+    return resp
+
+
+@app.get("/login", response_class=HTMLResponse)
+def login_page(request: Request):
+    if not auth.has_users():
+        return RedirectResponse("/setup", status_code=303)
+    if request.state.user:
+        return RedirectResponse("/", status_code=303)
+    return templates.TemplateResponse(request, "login.html", {"mode": "login", "local": request.state.local})
+
+
+@app.post("/api/auth/login")
+def do_login(request: Request, data: dict = Body(...)):
+    ip = request.headers.get("cf-connecting-ip") or (request.client.host if request.client else "")
+    try:
+        u = auth.login(data.get("username", ""), data.get("password", ""), ip)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    nxt = "/welcome" if u.get("must_change_pw") or not auth.ai_ready(u) else "/"
+    resp = JSONResponse({"ok": True, "next": nxt})
+    _set_cookie(request, resp, u)
+    return resp
+
+
+@app.post("/api/auth/logout")
+def do_logout():
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie(auth.COOKIE)
+    return resp
+
+
+@app.get("/welcome", response_class=HTMLResponse)
+def welcome_page(request: Request):
+    return templates.TemplateResponse(request, "welcome.html", {
+        "me": auth.public(_me(request)), "local": request.state.local, "providers": auth.PROVIDERS,
+        "cli": claude_client.cli_status() if request.state.local else {}})
+
+
+# ---------------- 내 계정 · 내 AI 연결 ----------------
+@app.get("/api/me")
+def get_me(request: Request):
+    return auth.public(_me(request))
+
+
+@app.put("/api/me/password")
+def change_password(request: Request, data: dict = Body(...)):
+    u = _me(request)
+    try:
+        auth.login(u["username"], data.get("current", ""), "pw:" + u["username"])
+        u = auth.set_password(u["username"], data.get("new", ""))
+    except ValueError as e:
+        raise HTTPException(400, str(e).replace("아이디 또는 비밀번호", "현재 비밀번호")) from e
+    resp = JSONResponse(auth.public(u))
+    _set_cookie(request, resp, u)  # 비밀번호가 바뀌면 세션을 새로 발급한다
+    return resp
+
+
+def _check_provider(request: Request, provider: str) -> None:
+    if provider == "cli" and not request.state.local:
+        raise HTTPException(400, "'이 PC의 Pro 계정'은 서버 PC에서 직접 접속할 때만 고를 수 있습니다.")
+
+
+@app.post("/api/me/ai/models")
+def ai_models(request: Request, data: dict = Body(...)):
+    """입력한 키(없으면 저장된 키)로 모델 목록을 가져온다 — 키 확인을 겸한다."""
+    provider = data.get("provider", "")
+    _check_provider(request, provider)
+    key = (data.get("key") or "").strip()
+    if not key:
+        cfg = auth.ai_config(_me(request))
+        key = cfg.get("key", "") if cfg.get("provider") == provider else ""
+    if not key:
+        raise HTTPException(400, "API 키를 입력하세요.")
+    return {"models": claude_client.list_models(provider, key)}
+
+
+@app.put("/api/me/ai")
+def save_ai(request: Request, data: dict = Body(...)):
+    provider = data.get("provider", "")
+    _check_provider(request, provider)
+    try:
+        u = auth.set_ai(_me(request)["username"], provider, data.get("model", ""), (data.get("key") or "").strip() or None)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    return auth.public(u)
+
+
+@app.post("/api/me/ai/test")
+def test_connection(request: Request):
+    schema = {"type": "object", "properties": {"reply": {"type": "string"}},
+              "required": ["reply"], "additionalProperties": False}
+    me = auth.get(_me(request)["username"])
+    claude_client.use({**auth.ai_config(me), "local": request.state.local, "username": me["username"]})
+    t = time.time()
+    out = claude_client.call_json("짧게 답하세요.", [{"type": "text", "text": "연결 테스트입니다. '연결 성공'이라고만 답하세요."}],
+                                  schema, max_tokens=1000, light=True)
+    return {"ok": True, "provider": claude_client.active_backend(), "seconds": round(time.time() - t, 1),
+            "reply": out.get("reply", "")}
+
+
+# ---------------- 내 PC의 분석 실행기 ----------------
+@app.get("/api/me/worker")
+def my_worker(request: Request):
+    u = _me(request)
+    return {"online": claude_client.worker_online(u["username"]), "token": bool(u.get("worker_hash")),
+            "issued_at": u.get("worker_issued_at", "")}
+
+
+@app.post("/api/me/worker/token")
+def my_worker_token(request: Request):
+    return {"token": auth.issue_worker_token(_me(request)["username"])}
+
+
+@app.get("/api/me/worker/script")
+def my_worker_script():
+    return FileResponse(APP_DIR / "cli_runner.py", media_type="text/x-python", filename="proposal-worker.py")
+
+
+def _worker(request: Request) -> dict:
+    h = request.headers.get("authorization", "")
+    u = auth.worker_user(h[7:].strip() if h.lower().startswith("bearer ") else "")
+    if not u:
+        raise HTTPException(401, "실행기 토큰이 올바르지 않습니다.")
+    return u
+
+
+@app.get("/api/worker/poll")
+def worker_poll(request: Request):
+    """실행기의 long-poll — 내 분석 작업이 생기면 돌려주고, 없으면 25초 뒤 204."""
+    u = _worker(request)
+    job = claude_client.worker_take(u["username"], wait=25)
+    if job is None:
+        return Response(status_code=204)
+    return job
+
+
+@app.post("/api/worker/result/{job_id}")
+def worker_result(request: Request, job_id: str, data: dict = Body(...)):
+    u = _worker(request)
+    if not claude_client.worker_finish(u["username"], job_id, data):
+        raise HTTPException(404, "작업을 찾을 수 없습니다(이미 시간 초과됐을 수 있음).")
+    return {"ok": True}
+
+
+# ---------------- 사용자 관리 (관리자) ----------------
+@app.get("/users", response_class=HTMLResponse)
+def users_page(request: Request):
+    return _render(request, "users.html", active="users", users=auth.list_users())
+
+
+@app.post("/api/users")
+def add_user(data: dict = Body(...)):
+    pw = auth.new_password()
+    try:
+        u = auth.create(data.get("username", ""), pw, data.get("name", ""),
+                        role="admin" if data.get("role") == "admin" else "member", must_change_pw=True)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    return {"user": auth.public(u), "password": pw}
+
+
+@app.post("/api/users/{username}/reset")
+def reset_user(username: str):
+    pw = auth.new_password()
+    try:
+        auth.set_password(username, pw, must_change=True)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    return {"password": pw}
+
+
+@app.put("/api/users/{username}")
+def update_user(username: str, data: dict = Body(...)):
+    try:
+        return auth.public(auth.set_role(username, data.get("role", "")))
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.delete("/api/users/{username}")
+def remove_user(request: Request, username: str):
+    if username == _me(request)["username"]:
+        raise HTTPException(400, "본인 계정은 삭제할 수 없습니다.")
+    try:
+        auth.delete(username)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    return {"ok": True}
 
 
 @app.on_event("startup")
@@ -72,7 +346,8 @@ def _files(p: dict, kind: str) -> list[Path]:
 def _render(request: Request, name: str, **ctx) -> HTMLResponse:
     return templates.TemplateResponse(
         request, name, {"kind_labels": KIND_LABELS, "workspaces": storage.list_projects(),
-                        "backend": claude_client.active_backend(),
+                        "me": auth.public(request.state.user), "local": request.state.local,
+                        "ai_on": auth.ai_enabled(request.state.user),
                         "analyzing": {pid for pid in list(_analyze_jobs) if _analyze_running(pid)}, **ctx}
     )
 
@@ -109,41 +384,8 @@ def put_company(data: dict = Body(...)):
 
 @app.get("/settings", response_class=HTMLResponse)
 def settings_page(request: Request):
-    return _render(request, "settings.html", active="settings", cfg=_settings_info())
-
-
-def _settings_info() -> dict:
-    return {
-        "backend": settings.get("backend", "auto"),
-        "active": claude_client.active_backend(),
-        "api_key_set": claude_client.has_api_key(),
-        "api_model": claude_client.MODEL,
-        "cli": claude_client.cli_status(),
-    }
-
-
-@app.get("/api/settings")
-def get_settings():
-    return _settings_info()
-
-
-@app.put("/api/settings")
-def put_settings(data: dict = Body(...)):
-    if data.get("backend") not in ("auto", "api", "cli"):
-        raise HTTPException(400, "backend는 auto / api / cli 중 하나여야 합니다.")
-    settings.update({"backend": data["backend"]})
-    return _settings_info()
-
-
-@app.post("/api/settings/test")
-def test_connection():
-    schema = {"type": "object", "properties": {"reply": {"type": "string"}},
-              "required": ["reply"], "additionalProperties": False}
-    t = time.time()
-    out = claude_client.call_json("짧게 답하세요.", [{"type": "text", "text": "연결 테스트입니다. '연결 성공'이라고만 답하세요."}],
-                                  schema, max_tokens=1000, light=True)
-    return {"ok": True, "backend": claude_client.active_backend(), "seconds": round(time.time() - t, 1),
-            "reply": out.get("reply", "")}
+    return _render(request, "settings.html", active="settings", providers=auth.PROVIDERS,
+                   cli=claude_client.cli_status() if request.state.local else {})
 
 
 @app.get("/workspaces/{pid}", response_class=HTMLResponse)
@@ -287,7 +529,7 @@ def step1_analyze(pid: str):
         raise HTTPException(400, "현재 RFP 또는 현재 공고서를 먼저 업로드하세요.")
     with _jobs_lock:
         if not _analyze_running(pid):
-            _analyze_jobs[pid] = {"future": _bg.submit(_run_analyze, pid), "started_at": time.time(),
+            _analyze_jobs[pid] = {"future": _bg.submit(claude_client.bound(_run_analyze), pid), "started_at": time.time(),
                                   "notice": bool(docs["notice"])}
     return _analyze_state(pid)
 
@@ -319,9 +561,9 @@ def _run_analyze(pid: str) -> dict:
     _strategy_job(pid, force=True)
     # 현재 공고서가 있으면 공고서 분석·체크리스트도 동시에 생성한다
     with ThreadPoolExecutor(max_workers=2) as pool:
-        f_compare = pool.submit(analysis.analyze_rfp, docs["current_rfp"], docs["notice"],
+        f_compare = pool.submit(claude_client.bound(analysis.analyze_rfp), docs["current_rfp"], docs["notice"],
                                 docs["past_rfp"], docs["past_notice"])
-        f_check = pool.submit(analysis.build_checklist, docs["notice"]) if docs["notice"] else None
+        f_check = pool.submit(claude_client.bound(analysis.build_checklist), docs["notice"]) if docs["notice"] else None
         result = f_compare.result()
         check, check_error = None, ""
         if f_check is not None:
@@ -364,7 +606,7 @@ def _strategy_job(pid: str, force: bool = False):
             return f
         if not force and _project(pid).get("strategy"):
             return None
-        f = _bg.submit(_run_strategy, pid)
+        f = _bg.submit(claude_client.bound(_run_strategy), pid)
         _strategy_jobs[pid] = f
         return f
 
@@ -492,6 +734,8 @@ def upload_template(file: UploadFile = File(...), name: str = Form(""), descript
         t = tpl_store.add(file.filename or "template.pptx", data, name, description)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
+    if structure and claude_client.active_backend() in ("", "none"):
+        return {**t, "structure_error": NO_AI_MSG}
     if structure and (t.get("form") or {}).get("kind") != "token":  # 이미 토큰형 양식이면 그대로 둔다
         try:
             t = tpl_store.structure(t["file"])

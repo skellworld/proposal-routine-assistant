@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ '최초 설정' if mode == 'setup' else '로그인' }} - 제안서 루틴 도우미</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/app.js"></script>
+</head>
+<body>
+<div class="auth-wrap">
+  <div class="card auth-card">
+    <div class="brand-lg">📑 제안서 루틴 도우미</div>
+    {% if mode == 'setup' %}
+      <p class="muted">처음 실행했습니다. 이 서버를 관리할 <b>관리자 계정</b>을 만드세요. 팀원 계정은 로그인 후 '사용자 관리'에서 추가합니다.</p>
+      {% if not local %}
+        <div class="notice-done notice-err"><span>⚠ 최초 관리자 계정은 보안을 위해 <b>서버 PC에서 직접</b> (http://127.0.0.1:8000) 접속해 만들어야 합니다.</span></div>
+      {% else %}
+      <form class="form-grid" id="f" style="margin-top:12px">
+        <label>이름<input type="text" name="name" placeholder="예: 홍길동"></label>
+        <label>아이디 (영문·숫자 3자 이상)<input type="text" name="username" autocomplete="username" required></label>
+        <label>비밀번호 (8자 이상)<input type="password" name="password" autocomplete="new-password" required></label>
+        <label>비밀번호 확인<input type="password" name="password2" autocomplete="new-password" required></label>
+        <button class="btn primary" style="justify-content:center">관리자 계정 만들기</button>
+      </form>
+      {% endif %}
+    {% else %}
+      <p class="muted">팀 계정으로 로그인하세요. 계정이 없으면 관리자에게 요청하세요.</p>
+      <form class="form-grid" id="f" style="margin-top:12px">
+        <label>아이디<input type="text" name="username" autocomplete="username" required autofocus></label>
+        <label>비밀번호<input type="password" name="password" autocomplete="current-password" required></label>
+        <button class="btn primary" style="justify-content:center">로그인</button>
+      </form>
+    {% endif %}
+    <p class="bad" id="err" style="margin:12px 0 0"></p>
+  </div>
+</div>
+<div id="busy"><div class="box"><div class="spinner"></div><div class="msg"></div><div class="sub muted"></div></div></div>
+<div id="toast"></div>
+<script>
+const MODE = {{ mode | tojson }};
+const f = document.getElementById("f");
+if (f) f.onsubmit = async e => {
+  e.preventDefault();
+  const d = Object.fromEntries(new FormData(f));
+  const err = document.getElementById("err");
+  err.textContent = "";
+  if (MODE === "setup" && d.password !== d.password2) { err.textContent = "비밀번호 확인이 일치하지 않습니다."; return; }
+  try {
+    const r = await api("POST", MODE === "setup" ? "/api/setup" : "/api/auth/login", d);
+    location.href = r.next || "/";
+  } catch (ex) { err.textContent = ex.message; }
+};
+</script>
+</body>
+</html>

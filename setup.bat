@@ -13,8 +13,7 @@ echo [2/3] 패키지 설치...
 echo [3/3] 설정 파일 준비...
 if not exist .env copy .env.example .env >nul
 echo.
-echo 설치 완료. Claude 연결 방식 중 하나를 준비하세요 (자세한 내용은 README.md):
-echo   (1) Pro 계정: Claude Code 설치 후 로그인 - 추가 비용 없음
-echo   (2) API 키: .env 파일에 ANTHROPIC_API_KEY 입력
-echo 그 다음 run.bat을 실행하세요.
+echo 설치 완료. run.bat을 실행하면 브라우저가 열립니다.
+echo   처음 실행이면 관리자 계정을 만들고, 분석에 쓸 AI(Claude 또는 ChatGPT API 키)를 연결하세요.
+echo   팀원 외부 접속 방법은 README.md의 '팀원이 외부에서 쓰게 하기'를 참고하세요.
 pause

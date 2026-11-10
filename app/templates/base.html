@@ -12,6 +12,7 @@
 <div class="app">
   <aside id="sidebar">
     <a class="brand" href="/">📑 제안서 루틴 도우미</a>
+    <i id="ai-flag" data-on="{{ 1 if ai_on else 0 }}" hidden></i>
     <button class="btn primary block" onclick="App.newWorkspace()">+ 새 워크스페이스</button>
 
     <div class="side-label">워크스페이스</div>
@@ -38,8 +39,10 @@
       <a href="/" class="side-link {{ 'on' if active == 'home' and not p }}">🏠 홈</a>
       <a href="/templates" class="side-link {{ 'on' if active == 'templates' }}">🗂 템플릿 관리</a>
       <a href="/company" class="side-link {{ 'on' if active == 'company' }}">🏢 우리 회사 현황</a>
-      <a href="/settings" class="side-link {{ 'on' if active == 'settings' }}">⚙ 설정
-        <span class="side-badge">{{ 'Pro 계정' if backend == 'cli' else 'API 키' }}</span></a>
+      {% if me and me.role == 'admin' %}<a href="/users" class="side-link {{ 'on' if active == 'users' }}">👥 사용자 관리</a>{% endif %}
+      <a href="/settings" class="side-link {{ 'on' if active == 'settings' }}">⚙ 내 AI 연결
+        <span class="side-badge">{{ {'anthropic': 'Claude', 'openai': 'ChatGPT', 'worker': '내 PC Claude', 'cli': '서버 Pro', 'none': '연결 안 함'}.get(me.ai.provider, '미설정') if me else '' }}</span></a>
+      {% if me %}<div class="side-user"><span>👤 {{ me.name }}</span><button onclick="App.logout()">로그아웃</button></div>{% endif %}
     </div>
   </aside>
 

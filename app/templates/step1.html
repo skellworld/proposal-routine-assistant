@@ -39,7 +39,7 @@
 
 <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:12px">
   <span class="muted" id="runhint"></span>
-  <button class="btn primary" id="run">▶ 분석 실행</button>
+  <button class="btn primary" id="run" data-ai>▶ 분석 실행</button>
 </div>
 <div id="jobstatus"></div>
 <div id="checkstatus" style="margin-bottom:18px"></div>
@@ -127,7 +127,7 @@ const runBtn = document.getElementById("run");
 let job = {{ analyze | tojson }};
 
 function renderJob() {
-  runBtn.disabled = job.running;
+  runBtn.disabled = job.running || !aiOn();
   if (!job.running) {
     jobBox.innerHTML = job.error ? `<div class="notice-done notice-err" style="margin-bottom:18px"><span>⚠ 마지막 분석이 실패했습니다: ${esc(job.error)}</span></div>` : "";
     return;

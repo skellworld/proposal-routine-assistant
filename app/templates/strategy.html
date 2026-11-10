@@ -2,7 +2,7 @@
 {% block content %}
 <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
   <h1 style="margin-bottom:6px">3. 핵심 추진 전략 추천</h1>
-  <button class="btn sm no-print" id="regen" title="최신 분석 결과를 반영해 다시 추천받습니다">🔄 다시 추천</button>
+  <button class="btn sm no-print" id="regen" data-ai title="최신 분석 결과를 반영해 다시 추천받습니다">🔄 다시 추천</button>
 </div>
 <p class="muted" style="margin-top:0">RFP·공고서와 1~2단계 분석을 바탕으로 Claude가 추천한 이번 사업의 핵심 전략입니다. 따로 할 일은 없고, 제안서 작성 방향을 잡을 때 참고하세요.</p>
 <div id="sbox"></div>
@@ -127,7 +127,9 @@ document.getElementById("regen").onclick = () => {
   generate(true);
 };
 if (data && !running) render();
-else if (hasDocs) generate(false);  // 결과가 없거나 1단계에서 만드는 중이면 자동으로 받아온다
-else document.getElementById("sbox").innerHTML = `<div class="card"><p class="muted" style="margin:0">1단계에서 RFP 또는 공고서를 올리면 자동으로 추천합니다.</p></div>`;
+else if (hasDocs && aiOn()) generate(false);  // 결과가 없거나 1단계에서 만드는 중이면 자동으로 받아온다
+else document.getElementById("sbox").innerHTML = `<div class="card"><p class="muted" style="margin:0">${hasDocs
+  ? "아직 추천 결과가 없습니다. AI를 연결하면 추천받을 수 있습니다."
+  : "1단계에서 RFP 또는 공고서를 올리면 자동으로 추천합니다."}</p></div>`;
 </script>
 {% endblock %}

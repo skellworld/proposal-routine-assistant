@@ -9,3 +9,5 @@ python-docx>=1.1
 python-pptx>=1.0
 olefile>=0.47
 matplotlib>=3.9
+openai>=1.60
+cryptography>=42
