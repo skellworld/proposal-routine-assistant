@@ -74,7 +74,9 @@ textarea.company-text { width: 100%; min-height: 520px; resize: vertical; font-s
 .co-head .co-name { flex: 1 1 260px; }
 .co-head input, .co-head select { font: inherit; font-size: 16px; font-weight: 700; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--text); }
 /* 워크스페이스 개요: 컨소시엄 구성 */
-.cons-list { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 12px; }
+.cons-list { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 12px; position: relative; }
+.cons-list.scroll { overflow-y: auto; overscroll-behavior: contain; padding-right: 6px; box-shadow: inset 0 -10px 8px -8px rgba(15,23,42,.12); }
+.cons-list.scroll .cons-row { flex-shrink: 0; }
 .cons-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; }
 .cons-row.on { border-color: var(--blue); background: #eff6ff; }
 .cons-row .cons-name { flex: 1; font-weight: 600; min-width: 0; overflow-wrap: anywhere; }

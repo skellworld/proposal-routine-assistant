@@ -86,6 +86,7 @@ let lead = picked[0];
 const hasStrategy = {{ 'true' if p.strategy else 'false' }};
 function renderCons() {
   const box = document.getElementById("cons");
+  const keep = box.scrollTop;  // 체크할 때마다 다시 그리므로 스크롤 위치를 유지한다
   box.innerHTML = COMPANIES.map(c => {
     const on = picked.includes(c.id);
     return `<div class="cons-row ${on ? "on" : ""}">
@@ -102,6 +103,13 @@ function renderCons() {
     renderCons();
   });
   box.querySelectorAll("input[type=radio]").forEach(r => r.onchange = () => { lead = r.value; renderCons(); });
+  // 회사가 5개를 넘으면 5줄 높이로 고정하고 목록 안에서 스크롤
+  const rows = box.querySelectorAll(".cons-row");
+  if (rows.length > 5) {
+    box.style.maxHeight = (rows[4].offsetTop + rows[4].offsetHeight - rows[0].offsetTop) + "px";
+    box.classList.add("scroll");
+  } else { box.style.maxHeight = ""; box.classList.remove("scroll"); }
+  box.scrollTop = keep;
 }
 renderCons();
 document.getElementById("cons-save").onclick = async () => {
