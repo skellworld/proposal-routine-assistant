@@ -393,21 +393,38 @@ def templates_page(request: Request):
 
 @app.get("/company", response_class=HTMLResponse)
 def company_page(request: Request):
-    return _render(request, "company.html", active="company", company_info=company.load(),
-                   max_chars=company.MAX_CHARS)
+    return _render(request, "company.html", active="company", companies=company.all_companies(),
+                   kinds=company.KINDS, max_chars=company.MAX_CHARS)
 
 
-@app.get("/api/company")
-def get_company():
-    return company.load()
+@app.get("/api/companies")
+def list_companies():
+    return company.all_companies()
 
 
-@app.put("/api/company")
-def put_company(data: dict = Body(...)):
+@app.post("/api/companies")
+def add_company(data: dict = Body(...)):
     try:
-        return company.save(str(data.get("profile", "")))
+        return company.create(str(data.get("name", "")), str(data.get("kind", "partner")))
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
+
+
+@app.put("/api/companies/{cid}")
+def put_company(cid: str, data: dict = Body(...)):
+    try:
+        return company.update(cid, str(data.get("name", "")), str(data.get("kind", "")), str(data.get("profile", "")))
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+
+
+@app.delete("/api/companies/{cid}")
+def del_company(cid: str):
+    try:
+        company.delete(cid)
+    except ValueError as e:
+        raise HTTPException(400, str(e)) from e
+    return {"ok": True}
 
 
 @app.get("/settings", response_class=HTMLResponse)
@@ -418,7 +435,11 @@ def settings_page(request: Request):
 
 @app.get("/workspaces/{pid}", response_class=HTMLResponse)
 def workspace_home(request: Request, pid: str):
-    return _render(request, "workspace.html", p=_project(pid), active="home")
+    p = _project(pid)
+    companies = [{"id": c["id"], "name": c["name"], "kind": c["kind"], "has_profile": bool(c.get("profile", "").strip())}
+                 for c in company.all_companies()]
+    return _render(request, "workspace.html", p=p, active="home", companies=companies,
+                   kinds=company.KINDS, **_consortium_ctx(p))
 
 
 @app.get("/workspaces/{pid}/step1", response_class=HTMLResponse)
@@ -440,7 +461,7 @@ def checklist_page(pid: str):
 @app.get("/workspaces/{pid}/strategy", response_class=HTMLResponse)
 def strategy_page(request: Request, pid: str):
     return _render(request, "strategy.html", p=_project(pid), active="strategy",
-                   strategy_running=_strategy_running(pid), company_info=company.load())
+                   strategy_running=_strategy_running(pid), **_consortium_ctx(_project(pid)))
 
 
 @app.get("/workspaces/{pid}/scoring", response_class=HTMLResponse)
@@ -467,6 +488,13 @@ def update_project(pid: str, data: dict = Body(...)):
     for k in storage.WORKSPACE_FIELDS:
         if k in data:
             p[k] = str(data[k]).strip()
+    if "companies" in data:
+        known = {c["id"] for c in company.all_companies()}
+        ids = [str(i) for i in (data["companies"] or []) if str(i) in known]
+        ids = list(dict.fromkeys(ids))  # 중복 제거(순서 유지)
+        if not ids:
+            raise HTTPException(400, "제안에 참여할 회사를 1개 이상 고르세요.")
+        p["companies"] = ids
     if not p["name"]:
         raise HTTPException(400, "워크스페이스 이름을 입력하세요.")
     storage.save_project(p)
@@ -646,6 +674,14 @@ def _strategy_job(pid: str, force: bool = False):
         return f
 
 
+def _consortium_ctx(p: dict) -> dict:
+    """화면용: 이 워크스페이스의 참여 회사(첫 번째 = 주관사)와 현재 현황 저장본 서명."""
+    members = company.resolve(p.get("companies"))
+    return {"members": [{"id": c["id"], "name": c["name"], "kind": c["kind"], "has_profile": bool(c.get("profile", "").strip()),
+                         "updated_at": c.get("updated_at", "")} for c in members],
+            "company_sig": company.signature(members)}
+
+
 def _strategy_context(p: dict) -> str:
     parts = []
     s1 = p.get("step1") or {}
@@ -664,12 +700,13 @@ def _run_strategy(pid: str) -> dict:
     docs = {k: _files(p, k) for k in storage.FILE_KINDS}
     if not docs["current_rfp"] and not docs["notice"]:
         raise ValueError("현재 RFP 또는 현재 공고서를 먼저 업로드하세요(1단계).")
-    info = company.load()
-    profile = info["profile"].strip()
+    members = company.resolve(p.get("companies"))
+    profile = company.prompt_block(members)
     result = analysis.build_strategy(docs["current_rfp"], docs["notice"], docs["past_rfp"],
                                      docs["past_notice"], _strategy_context(p), profile)
     result["generated_at"] = storage.now()
-    result["company_applied"] = info["updated_at"] if profile else ""
+    result["company_applied"] = company.signature(members) if profile else ""
+    result["company_names"] = [c["name"] for c in members] if profile else []
     result["documents"] = [d.name for v in docs.values() for d in v]
     p = _project(pid)
     p["strategy"] = result

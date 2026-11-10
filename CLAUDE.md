@@ -39,7 +39,7 @@ app/extractors.py      PDF/DOCX/HWPX/HWP/TXT 텍스트 추출
 app/pptx_*.py          PPT 생성 — pptx_token(노트 마커 #표지 등 + {{토큰}}) > pptx_form(힌트 텍스트) > 레이아웃
 app/template_struct.py 임의 PPT → 토큰형 양식 자동 구조화 (Claude 비전)
 app/thumbs.py, render.ps1  PowerPoint COM으로 슬라이드 PNG (Windows+PowerPoint 전용, 실패 시 생략)
-app/company.py         우리 회사 현황(data/company.json) — 전략 추천에 반영
+app/company.py         회사 현황(data/company.json) — 그룹사·협력사별. 워크스페이스 project.companies(첫 번째=주관사)로 골라 전략 추천에 종합 반영
 app/templates/*.html   화면. 각 페이지 스크립트는 <script type="text/x-page"> (app.js 라우터가 실행)
 app/static/app.js      프레임식 라우터(전체 새로고침 없음), api()/toast()/runLong() 헬퍼
 data/                  런타임 데이터. git에는 data/templates/만 포함

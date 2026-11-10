@@ -60,6 +60,28 @@ table.score tfoot td { background: #f1f5f9; }
 .company-grid .card { margin-bottom: 0; }
 textarea.company-text { width: 100%; min-height: 520px; resize: vertical; font-size: 14px; line-height: 1.7; box-sizing: border-box; }
 @media (max-width: 1000px) { .company-grid { grid-template-columns: 1fr; } }
+/* 회사 현황: 회사별 탭 */
+.co-tabs { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 16px; }
+.co-group { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.co-glabel { font-size: 12px; font-weight: 700; color: var(--muted); width: 104px; flex: 0 0 auto; }
+.co-tab { font: inherit; font-size: 14px; font-weight: 600; padding: 6px 12px; border: 1px solid var(--line); border-radius: 999px; background: #fff; color: var(--text); cursor: pointer; }
+.co-tab:hover { border-color: var(--blue); }
+.co-tab.on { background: var(--navy); border-color: var(--navy); color: #fff; }
+.co-empty { font-size: 11px; font-weight: 700; color: #b45309; background: #fef3c7; border-radius: 4px; padding: 0 4px; margin-left: 2px; }
+.co-tab.on .co-empty { color: #fff; background: rgba(255,255,255,.2); }
+.co-head { display: flex; gap: 12px; flex-wrap: wrap; }
+.co-head label { font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+.co-head .co-name { flex: 1 1 260px; }
+.co-head input, .co-head select { font: inherit; font-size: 16px; font-weight: 700; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--text); }
+/* 워크스페이스 개요: 컨소시엄 구성 */
+.cons-list { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 12px; }
+.cons-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; }
+.cons-row.on { border-color: var(--blue); background: #eff6ff; }
+.cons-row .cons-name { flex: 1; font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.cons-row .cons-kind { font-size: 12px; color: var(--muted); white-space: nowrap; }
+.cons-row .cons-lead { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 4px; white-space: nowrap; cursor: pointer; }
+.cons-row .cons-lead.dis { visibility: hidden; }
+.cons-tag { display: inline-block; font-size: 11px; font-weight: 700; padding: 1px 6px; border-radius: 4px; background: var(--navy); color: #fff; margin-left: 4px; }
 .stag.fit { background: #dcfce7; color: #166534; border-radius: 8px; line-height: 1.5; }
 .company-note { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 10px 14px; border-radius: 10px; margin-bottom: 14px; font-size: 14px; background: #f0fdf4; color: #166534; }
 .company-note.off { background: #f8fafc; color: var(--muted); }

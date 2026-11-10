@@ -1,21 +1,33 @@
 {% extends "base.html" %}
-{% block title %}우리 회사 현황 - 제안서 루틴 도우미{% endblock %}
+{% block title %}회사 현황 - 제안서 루틴 도우미{% endblock %}
 {% block content %}
-<h1 style="margin-bottom:6px">🏢 우리 회사 현황</h1>
-<p class="muted" style="margin-top:0">여기에 적은 내용은 모든 워크스페이스의 <b>3. 추진 전략</b> 추천에 반영됩니다.
-  Claude는 RFP 요구사항과 우리 회사 강점을 연결해 전략을 짜고, 부족한 부분은 보완 방안으로 알려줍니다.</p>
+<div style="display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap">
+  <h1 style="margin-bottom:6px">🏢 회사 현황</h1>
+  <button class="btn" id="add">+ 회사 추가</button>
+</div>
+<p class="muted" style="margin-top:0">그룹사와 컨소시엄 협력사의 현황을 회사별로 적어 두세요. 워크스페이스 <b>개요</b>에서 제안에 참여할 회사(1개 이상)를 고르면,
+  <b>3. 추진 전략</b> 추천 때 고른 회사들의 현황을 종합해 강점·보완점·역할 분담을 제안합니다.</p>
+
+<div class="co-tabs" id="tabs"></div>
 
 <div class="company-grid">
-  <div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:10px">
+  <div class="card" id="editor">
+    <div class="co-head">
+      <label class="co-name">회사 이름<input type="text" id="name" maxlength="60"></label>
+      <label>구분<select id="kind">{% for k, v in kinds.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select></label>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin:14px 0 8px">
       <h2 style="margin:0">회사 소개 (자유 형식)</h2>
-      <span class="muted" id="meta">{% if company_info.updated_at %}마지막 저장 {{ company_info.updated_at }}{% else %}아직 저장된 내용이 없습니다{% endif %}</span>
+      <span class="muted" id="meta"></span>
     </div>
     <textarea id="profile" class="company-text" spellcheck="false"
-      placeholder="회사 소개서나 기존 제안서의 '일반 현황'을 그대로 붙여 넣어도 됩니다.&#10;&#10;예)&#10;- 설립 2015년, 임직원 85명 (보안 컨설턴트 40명, 모의해킹 15명)&#10;- 과기정통부 지정 정보보호 전문서비스 기업, ISO 27001 인증&#10;- 주요 실적: 2024 OO공사 모의해킹, 2025 OO부 클라우드 보안 점검 ...&#10;- 보유 솔루션: 자체 취약점 자동진단 도구 'OOScan'&#10;- 핵심 인력: CISSP 6명, CISA 4명, 정보보안기사 20명&#10;- 약점·보완 필요: 모바일 앱 진단 인력 부족 ...">{{ company_info.profile }}</textarea>
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px">
+      placeholder="회사 소개서나 기존 제안서의 '일반 현황'을 그대로 붙여 넣어도 됩니다.&#10;&#10;예)&#10;- 설립 2015년, 임직원 85명 (보안 컨설턴트 40명, 모의해킹 15명)&#10;- 과기정통부 지정 정보보호 전문서비스 기업, ISO 27001 인증&#10;- 주요 실적: 2024 OO공사 모의해킹, 2025 OO부 클라우드 보안 점검 ...&#10;- 보유 솔루션: 자체 취약점 자동진단 도구 'OOScan'&#10;- 핵심 인력: CISSP 6명, CISA 4명, 정보보안기사 20명&#10;- 약점·보완 필요: 모바일 앱 진단 인력 부족 ..."></textarea>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-top:10px;gap:8px;flex-wrap:wrap">
       <span class="muted" id="count"></span>
-      <button class="btn primary" id="save">저장</button>
+      <span style="display:flex;gap:8px">
+        <button class="btn danger" id="del">삭제</button>
+        <button class="btn primary" id="save">저장</button>
+      </span>
     </div>
   </div>
   <div class="card">
@@ -29,33 +41,109 @@
       <li><b>차별화 강점</b> — 경쟁사 대비 내세울 점</li>
       <li><b>약점·제약</b> — 부족한 인력·실적 (보완 전략에 활용)</li>
     </ul>
-    <p class="muted">형식은 자유입니다. 문장, 목록, 표를 복사해 붙여 넣어도 됩니다. 적힌 사실만 근거로 쓰며, 없는 실적을 지어내지 않도록 지시합니다.</p>
+    <p class="muted">형식은 자유입니다. 적힌 사실만 근거로 쓰며, 없는 실적을 지어내지 않도록 지시합니다.</p>
     <p class="muted">내용을 바꾼 뒤 기존 워크스페이스에 반영하려면 3단계에서 <b>[🔄 다시 추천]</b>을 누르세요.</p>
   </div>
 </div>
+
+<dialog id="co-dialog">
+  <form method="dialog" id="co-form">
+    <h2>회사 추가</h2>
+    <label>회사 이름 *<input type="text" name="name" maxlength="60" placeholder="예: OO정보통신" required></label>
+    <label>구분<select name="kind">{% for k, v in kinds.items() %}<option value="{{ k }}" {{ 'selected' if k == 'partner' }}>{{ v }}</option>{% endfor %}</select></label>
+    <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:14px">
+      <button type="button" class="btn" onclick="this.closest('dialog').close()">취소</button>
+      <button class="btn primary">추가</button>
+    </div>
+  </form>
+</dialog>
 {% endblock %}
 {% block scripts %}
 <script type="text/x-page">
 const MAX = {{ max_chars | tojson }};
-const ta = document.getElementById("profile");
-let saved = ta.value;
+const KINDS = {{ kinds | tojson }};
+let list = {{ companies | tojson }};
+const params = new URLSearchParams(location.search);
+let cur = (list.find(c => c.id === params.get("c")) || list[0] || {}).id;
+const $ = id => document.getElementById(id);
+const ta = $("profile"), nameIn = $("name"), kindSel = $("kind");
+let saved = null;  // 마지막으로 불러오거나 저장한 값
+
+const dirty = () => saved && (ta.value !== saved.profile || nameIn.value.trim() !== saved.name || kindSel.value !== saved.kind);
+
+function tabs() {
+  const group = (k, label) => {
+    const xs = list.filter(c => c.kind === k);
+    if (!xs.length) return "";
+    return `<div class="co-group"><span class="co-glabel">${label}</span>${xs.map(c => `
+      <button type="button" class="co-tab ${c.id === cur ? "on" : ""}" data-id="${c.id}">
+        ${esc(c.name)}${c.profile ? "" : ' <span class="co-empty" title="현황 미등록">미등록</span>'}</button>`).join("")}</div>`;
+  };
+  $("tabs").innerHTML = group("group", "그룹사") + group("partner", "컨소시엄 협력사");
+  $("tabs").querySelectorAll(".co-tab").forEach(b => b.onclick = () => {
+    if (b.dataset.id === cur) return;
+    if (dirty() && !confirm("저장하지 않은 변경이 있습니다. 버리고 이동할까요?")) return;
+    select(b.dataset.id);
+  });
+}
+
+function select(id) {
+  cur = id;
+  const c = list.find(x => x.id === id);
+  if (!c) return;
+  history.replaceState({}, "", `/company?c=${encodeURIComponent(id)}`);
+  nameIn.value = c.name; kindSel.value = c.kind; ta.value = c.profile || "";
+  saved = { name: c.name, kind: c.kind, profile: c.profile || "" };
+  $("meta").textContent = c.updated_at ? `마지막 저장 ${c.updated_at}` : "아직 저장된 현황이 없습니다";
+  tabs(); count();
+}
+
 function count() {
   const n = ta.value.length;
-  document.getElementById("count").textContent = `${n.toLocaleString()} / ${MAX.toLocaleString()}자${ta.value !== saved ? " · 저장되지 않은 변경 있음" : ""}`;
+  $("count").textContent = `${n.toLocaleString()} / ${MAX.toLocaleString()}자${dirty() ? " · 저장되지 않은 변경 있음" : ""}`;
 }
-ta.addEventListener("input", count);
-count();
-document.getElementById("save").onclick = async () => {
+[ta, nameIn].forEach(el => el.addEventListener("input", count));
+kindSel.onchange = count;
+
+$("save").onclick = async () => {
   try {
-    const r = await api("PUT", "/api/company", { profile: ta.value });
-    ta.value = saved = r.profile;
-    document.getElementById("meta").textContent = `마지막 저장 ${r.updated_at}`;
-    count();
+    const c = await api("PUT", `/api/companies/${cur}`, { name: nameIn.value, kind: kindSel.value, profile: ta.value });
+    list = list.map(x => x.id === c.id ? c : x);
+    select(c.id);
     toast("저장했습니다");
   } catch (e) { toast(e.message, true); }
 };
+$("del").onclick = async () => {
+  const c = list.find(x => x.id === cur);
+  if (!confirm(`'${c.name}' 회사와 현황을 삭제할까요? 이 회사를 고른 워크스페이스에서도 빠집니다.`)) return;
+  try {
+    await api("DELETE", `/api/companies/${cur}`);
+    list = list.filter(x => x.id !== cur);
+    saved = null;
+    select(list[0].id);
+    toast("삭제했습니다");
+  } catch (e) { toast(e.message, true); }
+};
+$("add").onclick = () => {
+  if (dirty() && !confirm("저장하지 않은 변경이 있습니다. 버리고 새 회사를 추가할까요?")) return;
+  $("co-form").reset();
+  $("co-dialog").showModal();
+};
+$("co-form").onsubmit = async e => {
+  e.preventDefault();
+  const d = Object.fromEntries(new FormData(e.target));
+  try {
+    const c = await api("POST", "/api/companies", d);
+    list.push(c);
+    $("co-dialog").close();
+    select(c.id);
+    ta.focus();
+    toast(`'${c.name}'을(를) 추가했습니다. 현황을 입력하고 저장하세요`);
+  } catch (err) { toast(err.message, true); }
+};
 ta.addEventListener("keydown", e => {
-  if ((e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); document.getElementById("save").click(); }
+  if ((e.ctrlKey || e.metaKey) && e.key === "s") { e.preventDefault(); $("save").click(); }
 });
+select(cur);
 </script>
 {% endblock %}

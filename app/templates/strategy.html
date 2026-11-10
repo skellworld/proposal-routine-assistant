@@ -12,7 +12,8 @@
 const PID = {{ p.id | tojson }};
 let data = {{ (p.strategy or None) | tojson }};
 const running = {{ strategy_running | tojson }};
-const COMPANY = {{ {"profile": company_info.profile != "", "updated_at": company_info.updated_at} | tojson }};
+const MEMBERS = {{ members | tojson }};      // 이 워크스페이스의 참여 회사 (첫 번째 = 주관사)
+const COMPANY_SIG = {{ company_sig | tojson }};  // 현재 회사 구성·현황 저장본
 const hasDocs = {{ ((((p.files.current_rfp or []) + (p.files.notice or [])) | length) > 0) | tojson }};
 
 function render() {
@@ -48,6 +49,7 @@ function render() {
     </div>`).join("")}
   </div>
   ${(data.gaps || []).length ? `<div class="card"><h2>🧩 우리 회사 보완 포인트</h2><ul class="tight">${data.gaps.map(g => `<li>${esc(g)}</li>`).join("")}</ul></div>` : ""}
+  ${renderRoles(data.roles)}
   ${(data.cautions || []).length ? `<div class="card"><h2>⚠ 놓치면 안 되는 리스크</h2><ul class="tight caution">${data.cautions.map(c => `<li>${esc(c)}</li>`).join("")}</ul></div>` : ""}
   ${scoringLink(data.scoring)}
   <p class="muted">추천 시각: ${esc(data.generated_at || "")}</p>`;
@@ -55,14 +57,25 @@ function render() {
 
 function companyNote() {
   const applied = data.company_applied || "";
-  if (!COMPANY.profile)
-    return `<div class="company-note off"><span>🏢 우리 회사 현황이 등록되지 않아 일반 전략으로 추천했습니다.</span>
-      <a class="btn sm" href="/company">회사 현황 등록 →</a></div>`;
-  if (applied && applied === COMPANY.updated_at)
-    return `<div class="company-note"><span>🏢 우리 회사 현황(${esc(applied)} 저장본)을 반영한 맞춤 전략입니다.</span>
-      <a class="btn sm" href="/company">회사 현황 보기</a></div>`;
-  return `<div class="company-note off"><span>🏢 ${applied ? "회사 현황이 바뀌었습니다." : "이 결과는 회사 현황 없이 추천됐습니다."} [🔄 다시 추천]을 누르면 최신 회사 현황을 반영합니다.</span>
-    <a class="btn sm" href="/company">회사 현황 보기</a></div>`;
+  const names = MEMBERS.map((m, i) => esc(m.name) + (i === 0 && MEMBERS.length > 1 ? "(주관)" : "")).join(" · ");
+  const manage = `<a class="btn sm" href="/workspaces/${PID}">컨소시엄 구성 보기</a>`;
+  if (!MEMBERS.some(m => m.has_profile))
+    return `<div class="company-note off"><span>🏢 참여 회사(${names})의 현황이 등록되지 않아 일반 전략으로 추천했습니다.</span>
+      <a class="btn sm" href="/company?c=${encodeURIComponent(MEMBERS[0].id)}">회사 현황 등록 →</a></div>`;
+  const legacyMatch = MEMBERS.length === 1 && applied && applied === MEMBERS[0].updated_at;  // 회사 1개 시절 결과
+  if (applied && (applied === COMPANY_SIG || legacyMatch))
+    return `<div class="company-note"><span>🏢 ${MEMBERS.length > 1 ? "컨소시엄" : "참여 회사"} 현황(${names})을 종합한 맞춤 전략입니다.</span>${manage}</div>`;
+  // 예전 형식(현황 저장 시각만 저장) 결과이거나 구성·현황이 바뀜
+  const was = (data.company_names || []).join(" · ");
+  return `<div class="company-note off"><span>🏢 ${applied ? `컨소시엄 구성 또는 회사 현황이 바뀌었습니다${was ? ` (추천 당시: ${esc(was)})` : ""}.` : "이 결과는 회사 현황 없이 추천됐습니다."}
+    [🔄 다시 추천]을 누르면 현재 구성(${names})을 반영합니다.</span>${manage}</div>`;
+}
+
+function renderRoles(roles) {
+  if (!(roles || []).length) return "";
+  return `<div class="card"><h2>🤝 컨소시엄 역할 분담 (추천)</h2>
+    <table class="grid"><thead><tr><th style="width:22%">회사</th><th>추천 역할</th><th style="width:38%">근거</th></tr></thead>
+    <tbody>${roles.map(r => `<tr><td><b>${esc(r.company)}</b></td><td>${esc(r.role)}</td><td class="muted">${esc(r.basis)}</td></tr>`).join("")}</tbody></table></div>`;
 }
 
 function scoringLink(sc) {
