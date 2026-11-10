@@ -75,8 +75,7 @@ textarea.company-text { width: 100%; min-height: 520px; resize: vertical; font-s
 .co-head input, .co-head select { font: inherit; font-size: 16px; font-weight: 700; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: #fff; color: var(--text); }
 /* 워크스페이스 개요: 컨소시엄 구성 */
 .cons-list { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 12px; position: relative; }
-.cons-list.scroll { overflow-y: auto; overscroll-behavior: contain; padding-right: 6px; box-shadow: inset 0 -10px 8px -8px rgba(15,23,42,.12); }
-.cons-list.scroll .cons-row { flex-shrink: 0; }
+.cons-row { flex-shrink: 0; }
 .cons-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; }
 .cons-row.on { border-color: var(--blue); background: #eff6ff; }
 .cons-row .cons-name { flex: 1; font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
@@ -170,9 +169,33 @@ textarea { resize: vertical; }
 .srctag.n { background: #fce7f3; color: #9d174d; }
 @media (max-width: 1000px) { .doc-grid { grid-template-columns: 1fr; } }
 
-.steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
-.step h2 { display: flex; align-items: center; gap: 8px; }
-.step { display: block; color: var(--text); }
+/* 개요: 단계 카드 5개를 같은 크기로 (넓은 화면 5열 → 3열 → 2열 → 1열) */
+.steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; }
+@media (max-width: 1250px) { .steps { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 820px) { .steps { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .steps { grid-template-columns: 1fr; } }
+.steps > .card { margin: 0; }
+.step h2 { display: flex; align-items: center; gap: 8px; font-size: 16px; min-height: 40px; }
+.step { display: flex; flex-direction: column; color: var(--text); min-height: 170px; box-sizing: border-box; }
+.step p.muted { margin: 0 0 12px; font-size: 13px; line-height: 1.55; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.step .badge { margin-top: auto; align-self: flex-start; }
+/* 개요: 워크스페이스 정보 | 컨소시엄 구성 — 같은 고정 높이로 나란히 */
+.ws-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; }
+.ws-pair > .card { margin: 0; }
+.ws-box { height: 460px; display: flex; flex-direction: column; box-sizing: border-box; overflow: hidden; }
+.ws-box form { flex: 1; min-height: 0; }
+.ws-box label.grow { flex: 1; min-height: 0; }
+.ws-box label.grow textarea { flex: 1; min-height: 60px; resize: none; }
+.ws-box .cons-list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-right: 4px; }
+@media (max-width: 900px) { .ws-pair { grid-template-columns: 1fr; } .ws-box { height: auto; } .ws-box .cons-list { max-height: 300px; } }
+/* 개요: 업로드된 문서 */
+.doc-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; margin-top: 4px; }
+@media (max-width: 820px) { .doc-grid { grid-template-columns: 1fr; } }
+.doc-kind { border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; min-width: 0; }
+.doc-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; font-size: 14px; }
+.doc-kind .filelist { margin-top: 8px; }
+.doc-kind .filelist li { margin-bottom: 4px; }
+.doc-none { margin: 8px 0 2px; font-size: 13px; }
 .step:hover { border-color: var(--blue); }
 .step .num { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 28px; box-sizing: border-box; background: var(--navy); color: #fff; border-radius: 50%; width: 28px; height: 28px; padding: 0; font-size: 15px; line-height: 1; font-weight: 700; }
 .badge { display: inline-block; max-width: 100%; box-sizing: border-box; padding: 2px 9px; border-radius: 999px; font-size: 12px; font-weight: 700; line-height: 1.5; overflow-wrap: anywhere; }

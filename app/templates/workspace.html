@@ -31,21 +31,21 @@
   </a>
 </div>
 
-<div class="row">
-  <div class="card">
+<div class="ws-pair">
+  <div class="card ws-box">
     <h2>워크스페이스 정보</h2>
     <form id="wsform" class="form-grid">
       <label>제안 과업명<input type="text" name="name" value="{{ p.name }}" required></label>
       <label>발주기관<input type="text" name="client" value="{{ p.client or '' }}"></label>
       <label>제출 마감일<input type="date" name="deadline" value="{{ p.deadline or '' }}"></label>
-      <label>메모<textarea name="memo" rows="3">{{ p.memo or '' }}</textarea></label>
+      <label class="grow">메모<textarea name="memo">{{ p.memo or '' }}</textarea></label>
       <div style="display:flex;justify-content:space-between">
         <button type="button" class="btn danger" id="del">워크스페이스 삭제</button>
         <button type="submit" class="btn primary">저장</button>
       </div>
     </form>
   </div>
-  <div class="card">
+  <div class="card ws-box">
     <h2>🤝 컨소시엄 구성</h2>
     <p class="muted" style="margin:0">이번 제안에 참여할 회사를 1개 이상 고르고 주관사를 지정하세요. 3. 추진 전략에서 고른 회사들의 현황을 종합해 분석합니다.</p>
     <div class="cons-list" id="cons"></div>
@@ -54,17 +54,27 @@
       <button type="button" class="btn primary" id="cons-save">컨소시엄 저장</button>
     </div>
   </div>
-  <div class="card">
+</div>
+
+<div class="card">
+  <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap">
     <h2>업로드된 문서</h2>
-    {% for kind, label in kind_labels.items() %}
-      <p><b>{{ label }}</b>: {% if p.files[kind] %}{{ p.files[kind] | join(', ') }}{% else %}<span class="muted">없음</span>{% endif %}</p>
-    {% endfor %}
-    {% if p.step3.outputs %}
-      <h2 style="margin-top:18px">생성된 PPT</h2>
-      <ul class="filelist">{% for f in p.step3.outputs %}<li><span>📊 {{ f }}</span><a class="btn sm" href="/api/projects/{{ p.id }}/output/{{ f | urlencode }}">⬇</a></li>{% endfor %}</ul>
-    {% endif %}
-    <p class="muted">생성일 {{ p.created_at }}</p>
+    <span class="muted">생성일 {{ p.created_at }} · <a href="/workspaces/{{ p.id }}/step1">1. RFP 분석에서 올리기 →</a></span>
   </div>
+  <div class="doc-grid">
+    {% for kind, label in kind_labels.items() %}
+    <div class="doc-kind">
+      <div class="doc-head"><b>{{ label }}</b><span class="muted">{{ p.files[kind] | length }}개</span></div>
+      {% if p.files[kind] %}
+      <ul class="filelist">{% for f in p.files[kind] %}<li><span title="{{ f }}">📄 {{ f }}</span></li>{% endfor %}</ul>
+      {% else %}<p class="muted doc-none">없음</p>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% if p.step3.outputs %}
+  <h2 style="margin-top:18px">생성된 PPT <span class="muted" style="font-size:14px;font-weight:400">{{ p.step3.outputs | length }}개</span></h2>
+  <ul class="filelist doc-out">{% for f in p.step3.outputs %}<li><span title="{{ f }}">📊 {{ f }}</span><a class="btn sm" href="/api/projects/{{ p.id }}/output/{{ f | urlencode }}">⬇</a></li>{% endfor %}</ul>
+  {% endif %}
 </div>
 {% endblock %}
 {% block scripts %}
@@ -103,12 +113,6 @@ function renderCons() {
     renderCons();
   });
   box.querySelectorAll("input[type=radio]").forEach(r => r.onchange = () => { lead = r.value; renderCons(); });
-  // 회사가 5개를 넘으면 5줄 높이로 고정하고 목록 안에서 스크롤
-  const rows = box.querySelectorAll(".cons-row");
-  if (rows.length > 5) {
-    box.style.maxHeight = (rows[4].offsetTop + rows[4].offsetHeight - rows[0].offsetTop) + "px";
-    box.classList.add("scroll");
-  } else { box.style.maxHeight = ""; box.classList.remove("scroll"); }
   box.scrollTop = keep;
 }
 renderCons();
