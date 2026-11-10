@@ -143,6 +143,8 @@ const Router = {
 
   _eligible(a, e) {
     if (!a || e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return false;
+    // 로그인·시작하기 화면처럼 사이드바/본문 틀이 없는 페이지에서는 일반 링크로 이동한다
+    if (!document.getElementById("content") || !document.getElementById("sidebar")) return false;
     if (a.target || a.hasAttribute("download") || a.dataset.noRouter !== undefined) return false;
     const url = new URL(a.href, location.href);
     if (url.origin !== location.origin) return false;
@@ -310,15 +312,15 @@ function initUploaders(onChange) {
 function AiForm(root, opts) {
   const me = opts.me;
   const P = {
+    worker: { t: "내 PC의 Claude Code (Pro·Max 구독) — 추천", d: "설치 파일 하나만 실행하면 끝납니다. 내가 실행한 분석을 내 PC의 Claude 구독으로 처리하고, 결과는 팀 워크스페이스에 공유됩니다. 추가 비용이 없습니다." },
     anthropic: { t: "Claude (Anthropic)", d: "본인의 Anthropic API 키로 분석합니다. 사용한 만큼 본인 계정에 과금됩니다.",
                  link: "https://console.anthropic.com/settings/keys", ph: "sk-ant-...", pick: ids => ids.find(i => i === "claude-opus-5-5") || ids[0] },
     openai:    { t: "ChatGPT (OpenAI)", d: "본인의 OpenAI API 키로 분석합니다. 사용한 만큼 본인 계정에 과금됩니다.",
                  link: "https://platform.openai.com/api-keys", ph: "sk-...", pick: ids => ids.find(i => /^gpt-\d/.test(i) && !/mini|nano/.test(i)) || ids[0] },
   };
-  P.worker = { t: "내 PC의 Claude Code (Pro·Max 구독)", d: "내 PC에서 작은 실행기를 켜 두면, 내가 실행한 분석을 내 PC의 Claude Code가 처리합니다. 결과는 팀 워크스페이스에 그대로 공유됩니다. 분석하는 동안 실행기가 켜져 있어야 합니다." };
   if (opts.local) P.cli = { t: "서버 PC의 Pro 계정 (Claude Code)", d: "서버 PC에 로그인된 Claude Code 구독으로 분석합니다. 서버 PC에서 직접 접속할 때만 쓸 수 있습니다." };
   P.none = { t: "AI 연결 안 함", d: "AI 없이 씁니다. 분석 실행·전략 추천·목차 추출·템플릿 구조화 버튼은 꺼지고, 팀원이 만든 분석 결과 보기·파일 업로드·체크리스트·목차 편집·PPT 생성은 그대로 쓸 수 있습니다. 나중에 언제든 연결할 수 있습니다." };
-  let provider = me.ai.provider && P[me.ai.provider] ? me.ai.provider : "anthropic";
+  let provider = me.ai.provider && P[me.ai.provider] ? me.ai.provider : "worker";
   let models = [];
 
   root.innerHTML = `
@@ -336,17 +338,25 @@ function AiForm(root, opts) {
     <div class="ai-cli" style="margin-top:16px"></div>
     <div class="ai-worker" style="margin-top:16px">
       <div class="status"><span class="k">내 PC 실행기</span><span class="ai-wstat muted">확인 중...</span></div>
+      <div style="margin:12px 0">
+        <button type="button" class="btn primary ai-install">⬇ 설치 파일 받기 (Windows)</button>
+        <span class="muted ai-tokinfo" style="margin-left:8px"></span>
+      </div>
       <ol class="worker-steps">
-        <li><b>내 PC에 Claude Code 설치·로그인</b> (이미 쓰고 있으면 건너뛰기)
-          <code class="cmd">irm https://claude.ai/install.ps1 | iex</code>
-          <code class="cmd">claude auth login</code></li>
-        <li><b>실행기 내려받기</b> — Python 3.9 이상 필요 · <a href="/api/me/worker/script" download>⬇ proposal-worker.py</a></li>
-        <li><b>연결 토큰 발급 후 실행</b> — 내려받은 폴더의 터미널에서 아래 명령을 실행하고 창을 켜 두세요.
-          <div style="margin:6px 0"><button type="button" class="btn sm ai-token">🔑 토큰 발급</button>
-            <span class="muted ai-tokinfo"></span></div>
-          <div class="ai-cmd"></div></li>
+        <li>내려받은 <b>proposal-worker-setup.cmd</b>를 더블클릭합니다. ("Windows의 PC 보호" 창이 뜨면 <b>추가 정보 → 실행</b>)</li>
+        <li>Python·Claude Code가 없으면 자동으로 설치합니다. 처음 한 번만 브라우저에서 <b>Claude 계정 로그인</b>을 승인하세요.</li>
+        <li>설치가 끝나면 이 화면이 <b>● 연결됨</b>으로 바뀌고 자동으로 연결 테스트를 합니다.</li>
       </ol>
-      <p class="muted" style="margin:0">실행기는 서버로 나가는 연결만 쓰므로 내 PC의 방화벽·포트를 열 필요가 없습니다. 분석할 문서 내용이 내 PC로 전달되어 처리됩니다.</p>
+      <p class="muted" style="margin:0">실행기는 창 없이 백그라운드에서 돌고, PC를 켤 때마다 자동으로 실행됩니다. 서버로 나가는 연결만 쓰므로 방화벽·포트 설정이 필요 없습니다.
+        제거: <code>%LOCALAPPDATA%\\ProposalWorker\\uninstall.cmd</code></p>
+      <details style="margin-top:8px"><summary class="muted">직접 설치 (macOS·Linux 등)</summary>
+        <ol class="worker-steps">
+          <li>Claude Code 설치 후 <code>claude auth login</code></li>
+          <li><a href="/api/me/worker/script" download>⬇ proposal-worker.py</a> 내려받기 (Python 3.9+)</li>
+          <li><button type="button" class="btn sm ai-token">🔑 토큰 발급</button> 후 표시되는 명령 실행
+            <div class="ai-cmd"></div></li>
+        </ol>
+      </details>
     </div>
     <div style="display:flex;gap:8px;align-items:center;margin-top:16px">
       <button type="button" class="btn primary ai-save"></button>
@@ -397,10 +407,20 @@ function AiForm(root, opts) {
     try {
       const w = await api("GET", "/api/me/worker");
       $(".ai-wstat").innerHTML = w.online ? '<span class="ok">● 연결됨</span> — 분석을 내 PC의 Claude Code로 처리할 수 있습니다'
-        : (w.token ? '<span class="bad">● 꺼져 있음</span> — 내 PC에서 실행기를 켜 주세요' : '<span class="muted">토큰을 발급하고 실행기를 켜 주세요</span>');
+        : (w.token ? '<span class="bad">● 꺼져 있음</span> — 설치 파일을 실행했는지, PC가 켜져 있는지 확인하세요' : '<span class="muted">설치 파일을 받아 실행해 주세요</span>');
+      if (w.online && !w.token) me.worker_token = true;
+      // 실행기가 처음 연결되면 저장·연결 테스트까지 자동으로 진행한다
+      if (w.online && me.ai.provider !== "worker" && !autoSaved) { autoSaved = true; $(".ai-save").click(); }
     } catch (e) {}
-    wTimer = setTimeout(checkWorker, 5000);
+    wTimer = setTimeout(checkWorker, 3000);
   }
+  let autoSaved = false;
+  $(".ai-install").onclick = () => {
+    if (me.worker_token && !confirm("설치 파일을 새로 받으면 새 연결 토큰이 발급되어, 이전에 설치한 실행기는 끊깁니다(이 PC에서 새 설치 파일을 실행하면 됩니다). 계속할까요?")) return;
+    download("/api/me/worker/installer");
+    me.worker_token = true; me.worker_issued_at = "방금"; autoSaved = false;
+    $(".ai-tokinfo").textContent = "내려받은 파일을 실행하세요 — 연결되면 자동으로 다음 단계로 넘어갑니다";
+  };
   $(".ai-token").onclick = async () => {
     if (me.worker_token && !confirm("토큰을 다시 발급할까요? 이전 토큰으로 켜 둔 실행기는 연결이 끊깁니다.")) return;
     try {

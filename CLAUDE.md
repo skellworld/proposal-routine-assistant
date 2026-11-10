@@ -31,6 +31,8 @@ app/main.py            라우트(페이지 + /api/*), 전략 백그라운드 작
 app/analysis.py        단계별 Claude 프롬프트·JSON 스키마 (RFP 비교, 체크리스트, 전략+배점표, 목차)
 app/auth.py            계정·세션 쿠키·사용자별 AI 설정(암호화 키) — data/users.json, data/secret.key
 app/cli_runner.py      Claude Code CLI 실행(표준 라이브러리 전용). 팀원 PC 실행기(proposal-worker.py로 배포)와 서버가 공용
+app/worker_setup.cmd   팀원 PC용 Windows 원클릭 설치 파일 템플릿(cmd+PowerShell). /api/me/worker/installer가 서버 주소·토큰을 넣어 내려준다.
+                       UTF-8(BOM 없음)·CRLF로 내려가므로 cmd 부분은 ASCII만 쓴다
 app/claude_client.py   call_json(): 요청 사용자의 설정(contextvar)으로 Anthropic / OpenAI / 서버 CLI / 팀원 실행기(worker 대기열) 호출.
                        스레드로 넘길 때는 claude_client.bound(fn)으로 감싸야 설정이 이어진다
 app/extractors.py      PDF/DOCX/HWPX/HWP/TXT 텍스트 추출

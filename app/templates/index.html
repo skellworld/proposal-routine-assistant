@@ -8,7 +8,7 @@
     <button class="btn primary" onclick="App.newWorkspace()">+ 새 워크스페이스</button>
   </div>
   <table class="grid">
-    <thead><tr><th>제안 과업</th><th>발주기관</th><th>마감</th><th>1. RFP 분석</th><th>2. 체크리스트</th><th>3. 추진 전략</th><th>4. 목차 PPT</th></tr></thead>
+    <thead><tr><th>제안 과업</th><th>발주기관</th><th>마감</th><th>1. RFP 분석</th><th>2. 체크리스트</th><th>3. 추진 전략</th><th>4. 배점표</th><th>5. 목차 PPT</th></tr></thead>
     <tbody>
     {% for x in workspaces %}
       {% set items = (x.step2['items'] if x.step2 else []) %}
@@ -19,6 +19,7 @@
         <td>{% if x.step1 %}<span class="badge done">완료</span>{% else %}<span class="badge todo">대기</span>{% endif %}</td>
         <td>{% if items %}{{ items | selectattr('checked') | list | length }} / {{ items | length }}{% else %}<span class="badge todo">대기</span>{% endif %}</td>
         <td>{% if x.strategy %}<span class="badge done">추천 완료</span>{% else %}<span class="badge todo">대기</span>{% endif %}</td>
+        <td>{% if x.strategy and x.strategy.scoring and x.strategy.scoring.found %}<span class="badge done">{{ x.strategy.scoring.rows | length }}개 항목</span>{% else %}<span class="badge todo">대기</span>{% endif %}</td>
         <td>{% if x.step3 and x.step3.outputs %}<span class="badge done">{{ x.step3.outputs | length }}개 생성</span>{% else %}<span class="badge todo">대기</span>{% endif %}</td>
       </tr>
     {% endfor %}
@@ -40,7 +41,8 @@
     <li><b>1. RFP 분석</b>: 현재/과거 RFP 업로드 후 비교 분석</li>
     <li><b>2. 공고서</b>: 공고서 업로드 후 준비서류 체크리스트 생성 → <b>✔ 체크리스트</b>에서 구비 체크</li>
     <li><b>3. 추진 전략</b>: 1단계 분석 때 자동으로 추천되는 핵심 추진 전략 5가지를 참고</li>
-    <li><b>4. 목차 PPT</b>: 템플릿 선택 → 목차 추출·편집 → PPT 생성</li>
+    <li><b>4. 배점표</b>: 평가 배점표와 항목별 연계 전략 확인 (3단계와 함께 자동 정리)</li>
+    <li><b>5. 목차 PPT</b>: 템플릿 선택 → 목차 추출·편집 → PPT 생성</li>
   </ol>
 </div>
 {% endblock %}

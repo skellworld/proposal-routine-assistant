@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block content %}
+<h1 style="margin-bottom:6px">4. 평가 배점표</h1>
+<p class="muted" style="margin-top:0">RFP·공고서의 평가 배점표를 문서 그대로 정리하고, 항목마다 공략할 핵심 추진 전략(3단계)을 연결했습니다. 배점이 큰 항목부터 목차와 분량을 배분할 때 참고하세요.</p>
+<div id="scbox"></div>
+{% endblock %}
+{% block scripts %}
+<script type="text/x-page">
+const PID = {{ p.id | tojson }};
+const data = {{ (p.strategy or None) | tojson }};
+const running = {{ strategy_running | tojson }};
+const CIRCLED = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨"];
+const box = document.getElementById("scbox");
+
+function msg(html) { box.innerHTML = `<div class="card"><p class="muted" style="margin:0">${html}</p></div>`; }
+
+function render() {
+  const sc = data.scoring;
+  if (!sc) return msg(`📊 이 전략 결과는 배점표 기능 이전에 만들어졌습니다. <a href="/workspaces/${PID}/strategy">3. 추진 전략</a>에서 [🔄 다시 추천]을 하면 배점표가 함께 정리됩니다.`);
+  if (!sc.found || !(sc.rows || []).length) return msg("📊 RFP·공고서에서 평가 배점표를 찾지 못했습니다.");
+  const strategies = data.strategies || [];
+  const rows = sc.rows;
+  // 같은 평가부문이 연속되면 첫 행에만 rowspan으로 표시
+  const span = rows.map((r, i) => {
+    if (i && r.area === rows[i - 1].area) return 0;
+    let n = 1;
+    while (i + n < rows.length && rows[i + n].area === r.area) n++;
+    return n;
+  });
+  const hasArea = rows.some(r => r.area);
+  const used = [...new Set(rows.flatMap(r => (r.strategies || []).filter(n => n >= 1 && n <= strategies.length)))].sort((a, b) => a - b);
+  box.innerHTML = `
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:10px">
+      <h2 style="margin:0">📊 평가 배점표</h2>
+      <span class="muted">${[sc.ratio && sc.ratio !== "명시 없음" ? esc(sc.ratio) : "", sc.source ? `근거: ${esc(sc.source)}` : ""].filter(Boolean).join(" · ")}</span>
+    </div>
+    <table class="grid score">
+      <thead><tr>${hasArea ? `<th style="width:16%">평가부문</th>` : ""}<th style="width:22%">평가항목</th><th style="width:8%">배점</th><th>평가 기준</th><th style="width:12%">연계 전략</th></tr></thead>
+      <tbody>${rows.map((r, i) => `
+        <tr>${hasArea && span[i] ? `<td class="item" rowspan="${span[i]}">${esc(r.area || "-")}</td>` : ""}
+          <td>${esc(r.item)}</td><td class="pts">${esc(r.points)}</td><td>${esc(r.criteria)}</td>
+          <td>${(r.strategies || []).filter(n => n >= 1 && n <= 9).map(n => `<span class="slink" title="${esc((strategies[n - 1] || {}).title || "")}">${CIRCLED[n - 1]}</span>`).join(" ")}</td></tr>`).join("")}
+      </tbody>
+      ${sc.total ? `<tfoot><tr><td colspan="${hasArea ? 2 : 1}"><b>합계</b></td><td class="pts"><b>${esc(sc.total)}</b></td><td colspan="2"></td></tr></tfoot>` : ""}
+    </table>
+  </div>
+  ${used.length ? `
+  <div class="card">
+    <h2>🔗 연계 전략</h2>
+    <ul class="tight" style="list-style:none;padding-left:0">${used.map(n => `
+      <li><span class="slink">${CIRCLED[n - 1]}</span> <b>${esc(strategies[n - 1].title)}</b> <span class="muted">— ${esc(strategies[n - 1].message || "")}</span></li>`).join("")}
+    </ul>
+    <p class="muted" style="margin:8px 0 0">전략별 근거와 실행 방안은 <a href="/workspaces/${PID}/strategy">3. 추진 전략</a>에서 볼 수 있습니다.</p>
+  </div>` : ""}
+  <p class="muted">정리 시각: ${esc(data.generated_at || "")}</p>`;
+}
+
+async function waitForStrategy() {
+  msg("⏳ 3단계 추진 전략과 함께 배점표를 정리하는 중입니다. 끝나면 자동으로 표시됩니다.");
+  for (;;) {
+    await new Promise(r => setTimeout(r, 5000));
+    if (!document.contains(box)) return;  // 다른 화면으로 이동함
+    try {
+      const s = await api("GET", `/api/projects/${PID}/strategy/status`);
+      if (!s.running) return Router.reload();
+    } catch (e) { return; }
+  }
+}
+
+if (running) waitForStrategy();
+else if (data) render();
+else msg(`아직 배점표가 없습니다. 1단계에서 RFP·공고서를 분석하면 <a href="/workspaces/${PID}/strategy">3. 추진 전략</a>과 함께 자동으로 정리됩니다.`);
+</script>
+{% endblock %}

@@ -243,6 +243,34 @@ def my_worker_script():
     return FileResponse(APP_DIR / "cli_runner.py", media_type="text/x-python", filename="proposal-worker.py")
 
 
+@app.get("/api/me/worker/installer")
+def my_worker_installer(request: Request):
+    """Windows 원클릭 설치 파일 — 서버 주소와 새 실행기 토큰을 넣어 내려준다(이전 토큰은 끊긴다).
+    Python·Claude Code 자동 설치, 최초 1회 Claude 로그인, 시작 프로그램 등록(콘솔 창 없이 pythonw)."""
+    server = str(request.base_url).rstrip("/")
+    token = auth.issue_worker_token(_me(request)["username"])
+    if "'" in server:
+        raise HTTPException(400, "서버 주소를 확인할 수 없습니다.")
+    text = (APP_DIR / "worker_setup.cmd").read_text(encoding="utf-8")
+    text = text.replace("__SERVER__", server).replace("__TOKEN__", token)
+    body = text.replace("\r\n", "\n").replace("\n", "\r\n").encode("utf-8")  # cmd는 CRLF, BOM 없이
+    return Response(body, media_type="application/octet-stream", headers={
+        "Content-Disposition": 'attachment; filename="proposal-worker-setup.cmd"', "Cache-Control": "no-store"})
+
+
+@app.get("/api/worker/hello")
+def worker_hello(request: Request):
+    """실행기 시작 시 토큰·연결을 바로 확인하는 용도 (long-poll 전에 '[연결됨]'을 표시)."""
+    return {"ok": True, "username": _worker(request)["username"]}
+
+
+@app.get("/api/worker/script")
+def worker_script(request: Request):
+    """설치 파일이 실행기 스크립트를 받아 가는 경로 (실행기 토큰 인증)."""
+    _worker(request)
+    return FileResponse(APP_DIR / "cli_runner.py", media_type="text/x-python", filename="proposal-worker.py")
+
+
 def _worker(request: Request) -> dict:
     h = request.headers.get("authorization", "")
     u = auth.worker_user(h[7:].strip() if h.lower().startswith("bearer ") else "")
@@ -413,6 +441,13 @@ def checklist_page(pid: str):
 def strategy_page(request: Request, pid: str):
     return _render(request, "strategy.html", p=_project(pid), active="strategy",
                    strategy_running=_strategy_running(pid), company_info=company.load())
+
+
+@app.get("/workspaces/{pid}/scoring", response_class=HTMLResponse)
+def scoring_page(request: Request, pid: str):
+    """평가 배점표 — 3단계 전략 추천 때 함께 정리된 strategy.scoring을 따로 보여 준다."""
+    return _render(request, "scoring.html", p=_project(pid), active="scoring",
+                   strategy_running=_strategy_running(pid))
 
 
 @app.get("/workspaces/{pid}/step3", response_class=HTMLResponse)

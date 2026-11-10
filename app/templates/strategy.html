@@ -49,7 +49,7 @@ function render() {
   </div>
   ${(data.gaps || []).length ? `<div class="card"><h2>🧩 우리 회사 보완 포인트</h2><ul class="tight">${data.gaps.map(g => `<li>${esc(g)}</li>`).join("")}</ul></div>` : ""}
   ${(data.cautions || []).length ? `<div class="card"><h2>⚠ 놓치면 안 되는 리스크</h2><ul class="tight caution">${data.cautions.map(c => `<li>${esc(c)}</li>`).join("")}</ul></div>` : ""}
-  ${renderScoring(data.scoring)}
+  ${scoringLink(data.scoring)}
   <p class="muted">추천 시각: ${esc(data.generated_at || "")}</p>`;
 }
 
@@ -65,37 +65,10 @@ function companyNote() {
     <a class="btn sm" href="/company">회사 현황 보기</a></div>`;
 }
 
-const CIRCLED =["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨"];
-function renderScoring(sc) {
-  if (!sc)  // 배점표 기능 이전에 만든 결과
-    return `<div class="card"><p class="muted" style="margin:0">📊 평가 배점표는 [🔄 다시 추천]을 하면 함께 정리됩니다.</p></div>`;
-  if (!sc.found || !(sc.rows || []).length) return "";
-  // 같은 평가부문이 연속되면 첫 행에만 rowspan으로 표시
-  const rows = sc.rows;
-  const span = rows.map((r, i) => {
-    if (i && r.area === rows[i - 1].area) return 0;
-    let n = 1;
-    while (i + n < rows.length && rows[i + n].area === r.area) n++;
-    return n;
-  });
-  const hasArea = rows.some(r => r.area);
-  return `
-  <div class="card">
-    <div style="display:flex;justify-content:space-between;align-items:baseline;gap:12px;flex-wrap:wrap;margin-bottom:10px">
-      <h2 style="margin:0">📊 평가 배점표</h2>
-      <span class="muted">${[sc.ratio && sc.ratio !== "명시 없음" ? esc(sc.ratio) : "", sc.source ? `근거: ${esc(sc.source)}` : ""].filter(Boolean).join(" · ")}</span>
-    </div>
-    <table class="grid score">
-      <thead><tr>${hasArea ? `<th style="width:16%">평가부문</th>` : ""}<th style="width:22%">평가항목</th><th style="width:8%">배점</th><th>평가 기준</th><th style="width:12%">연계 전략</th></tr></thead>
-      <tbody>${rows.map((r, i) => `
-        <tr>${hasArea && span[i] ? `<td class="item" rowspan="${span[i]}">${esc(r.area || "-")}</td>` : ""}
-          <td>${esc(r.item)}</td><td class="pts">${esc(r.points)}</td><td>${esc(r.criteria)}</td>
-          <td>${(r.strategies || []).filter(n => n >= 1 && n <= 9).map(n => `<span class="slink" title="${esc((data.strategies[n - 1] || {}).title || "")}">${CIRCLED[n - 1]}</span>`).join(" ")}</td></tr>`).join("")}
-      </tbody>
-      ${sc.total ? `<tfoot><tr><td colspan="${hasArea ? 2 : 1}"><b>합계</b></td><td class="pts"><b>${esc(sc.total)}</b></td><td colspan="2"></td></tr></tfoot>` : ""}
-    </table>
-    <p class="muted" style="margin:8px 0 0">연계 전략 번호는 위 핵심 전략 카드 번호입니다. 마우스를 올리면 전략명이 보입니다.</p>
-  </div>`;
+function scoringLink(sc) {
+  if (sc && sc.found === false) return "";
+  return `<div class="company-note"><span>📊 평가 배점표와 항목별 연계 전략은 <b>4. 배점표</b> 탭에서 볼 수 있습니다.</span>
+    <a class="btn sm" href="/workspaces/${PID}/scoring">배점표 보기 →</a></div>`;
 }
 
 function loading(msg) {

@@ -39,11 +39,14 @@ cd proposal-routine-assistant
 | 서버 PC의 Pro 계정 (Claude Code) | 서버 PC에서 직접 접속할 때만 선택 가능. `irm https://claude.ai/install.ps1 \| iex` 설치 후 `claude auth login` |
 
 **내 PC의 Claude Code로 분석하기 (팀원)**
-1. 내 PC에 Python 3.9+와 Claude Code를 설치하고 `claude auth login`으로 로그인합니다.
-2. 웹 `⚙ 내 AI 연결` → '내 PC의 Claude Code' → `proposal-worker.py` 내려받기 → [토큰 발급].
-3. 화면에 나온 명령(`python proposal-worker.py --server <서버주소> --token <토큰>`)을 실행하고 창을 켜 둡니다. 다음부터는 `python proposal-worker.py`만 실행하면 됩니다.
-4. 설정 화면에 '● 연결됨'이 보이면 [저장하고 연결 테스트]. 이후 내가 실행한 분석은 내 PC에서 처리되고 결과는 팀이 함께 봅니다.
-   실행기는 서버로 나가는 연결만 쓰므로 내 PC의 방화벽·포트를 열 필요가 없습니다. 분석하는 동안 실행기가 켜져 있어야 합니다.
+1. 웹 `⚙ 내 AI 연결`(또는 첫 로그인의 시작하기 화면) → '내 PC의 Claude Code' → **[⬇ 설치 파일 받기 (Windows)]**.
+2. 내려받은 `proposal-worker-setup.cmd`를 더블클릭합니다. Python·Claude Code가 없으면 자동 설치하고, 처음 한 번만 브라우저에서 Claude 로그인을 승인합니다.
+3. 설치가 끝나면 웹 화면이 '● 연결됨'으로 바뀌고 저장·연결 테스트가 자동으로 진행됩니다.
+   - 실행기는 콘솔 창 없이(pythonw) 백그라운드에서 돌고, Windows 시작 프로그램에 등록되어 PC를 켤 때마다 자동 실행됩니다.
+   - 설치 위치·로그: `%LOCALAPPDATA%\ProposalWorker\` (`worker.log`), 제거: 같은 폴더의 `uninstall.cmd`.
+   - 설치 파일에는 내 연결 토큰이 들어 있으니 다른 사람과 공유하지 마세요. 새로 받으면 이전 토큰은 끊깁니다.
+   - 실행기는 서버로 나가는 연결만 쓰므로 내 PC의 방화벽·포트를 열 필요가 없습니다.
+4. macOS·Linux는 같은 화면의 '직접 설치'에서 `proposal-worker.py`와 토큰을 받아 `python proposal-worker.py --server <서버주소> --token <토큰>`으로 실행합니다.
 
 Claude Pro·ChatGPT Plus 같은 채팅 구독은 API와 결제가 별개라 팀원 분석에는 쓸 수 없습니다(각 API 콘솔에서 결제 수단 등록 필요).
 키는 서버에 암호화해 저장되며, 각자 실행한 분석에만 쓰입니다.
@@ -112,8 +115,9 @@ python manage.py tunnel start   # 외부 접속 주소 열기 (stop / status)
 1. **+ 새 워크스페이스**: 제안 과업명·발주기관·마감일 입력 → 사이드바에 D-day와 진행 상태(●●●●) 표시
 2. **1. RFP 분석**: 현재/과거 RFP·공고서를 한꺼번에 드래그 → [분석 실행] → 비교표 웹/PNG 확인
 3. **2. 공고서·체크리스트**: 1단계에서 공고서를 함께 올리면 자동 생성 → 구비 시 체크 (자동 저장)
-4. **3. 추진 전략**: 핵심 전략 5가지·평가 배점표·우리 회사 강점/보완점 (자동 생성)
-5. **4. 목차 PPT**: 템플릿 선택 → [RFP에서 목차 추출] → 편집 → [PPT 생성]
+4. **3. 추진 전략**: 핵심 전략 5가지·우리 회사 강점/보완점 (자동 생성)
+5. **4. 배점표**: 평가 배점표와 항목별 연계 전략 (3단계와 함께 자동 정리)
+6. **5. 목차 PPT**: 템플릿 선택 → [RFP에서 목차 추출] → 편집 → [PPT 생성]
 
 ## 폴더 구조
 ```

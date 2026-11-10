@@ -18,8 +18,14 @@
     <p class="muted">{% if p.strategy %}“{{ p.strategy.concept }}” — 추천 전략 {{ p.strategy.strategies | length }}개{% else %}1단계 분석 때 자동으로 추천합니다.{% endif %}</p>
     {% if p.strategy %}<span class="badge done">추천 완료 · {{ p.strategy.generated_at }}</span>{% else %}<span class="badge todo">대기</span>{% endif %}
   </a>
+  {% set sc = (p.strategy.scoring if p.strategy else None) %}
+  <a class="card step" href="/workspaces/{{ p.id }}/scoring">
+    <h2><span class="num">4</span>평가 배점표</h2>
+    <p class="muted">{% if sc and sc.found %}평가항목 {{ sc.rows | length }}개{% if sc.total %} · 합계 {{ sc.total }}{% endif %}{% if sc.ratio and sc.ratio != '명시 없음' %} · {{ sc.ratio }}{% endif %}{% elif sc %}RFP·공고서에서 배점표를 찾지 못했습니다.{% else %}3단계 전략 추천 때 함께 정리합니다.{% endif %}</p>
+    {% if sc and sc.found %}<span class="badge done">정리 완료</span>{% else %}<span class="badge todo">대기</span>{% endif %}
+  </a>
   <a class="card step" href="/workspaces/{{ p.id }}/step3">
-    <h2><span class="num">4</span>목차 PPT 생성</h2>
+    <h2><span class="num">5</span>목차 PPT 생성</h2>
     <p class="muted">템플릿을 골라 RFP 목차가 적용된 파워포인트를 만듭니다.</p>
     {% if p.step3.outputs %}<span class="badge done">{{ p.step3.outputs | length }}개 생성</span>{% else %}<span class="badge todo">대기</span>{% endif %}
   </a>

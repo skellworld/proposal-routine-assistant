@@ -23,8 +23,8 @@
         <a href="/workspaces/{{ w.id }}" class="ws {{ 'on' if p and p.id == w.id }}">
           <span class="ws-name">{% if w.id in analyzing %}<span class="ws-busy" title="RFP 분석 중 (백그라운드)"></span>{% endif %}{{ w.name }}</span>
           <span class="ws-sub">
-            <span class="dots" title="1.RFP분석 / 2.체크리스트 / 3.추진전략 / 4.목차PPT">
-              <i class="{{ 'ok' if w.step1 }}"></i><i class="{{ 'ok' if items and (items | selectattr('checked') | list | length) == (items | length) else ('half' if items) }}"></i><i class="{{ 'ok' if w.strategy }}"></i><i class="{{ 'ok' if w.step3 and w.step3.outputs }}"></i>
+            <span class="dots" title="1.RFP분석 / 2.체크리스트 / 3.추진전략 / 4.배점표 / 5.목차PPT">
+              <i class="{{ 'ok' if w.step1 }}"></i><i class="{{ 'ok' if items and (items | selectattr('checked') | list | length) == (items | length) else ('half' if items) }}"></i><i class="{{ 'ok' if w.strategy }}"></i><i class="{{ 'ok' if w.strategy and w.strategy.scoring and w.strategy.scoring.found }}"></i><i class="{{ 'ok' if w.step3 and w.step3.outputs }}"></i>
             </span>
             {% if w.client %}<span class="ws-client">{{ w.client }}</span>{% endif %}
             {% if dd %}<span class="dday {{ 'urgent' if dd == 'D-DAY' or (dd.startswith('D-') and dd[2:] | int <= 7) }} {{ 'over' if dd == '마감' }}">{{ dd }}</span>{% endif %}
@@ -60,7 +60,8 @@
         <a href="/workspaces/{{ p.id }}/step1" class="{{ 'on' if active == 'step1' }}">1. RFP 분석</a>
         <a href="/workspaces/{{ p.id }}/step2" class="{{ 'on' if active == 'step2' }}">2. 공고서·체크리스트</a>
         <a href="/workspaces/{{ p.id }}/strategy" class="{{ 'on' if active == 'strategy' }}">3. 추진 전략</a>
-        <a href="/workspaces/{{ p.id }}/step3" class="{{ 'on' if active == 'step3' }}">4. 목차 PPT</a>
+        <a href="/workspaces/{{ p.id }}/scoring" class="{{ 'on' if active == 'scoring' }}">4. 배점표</a>
+        <a href="/workspaces/{{ p.id }}/step3" class="{{ 'on' if active == 'step3' }}">5. 목차 PPT</a>
       </nav>
     </div>
     {% endif %}

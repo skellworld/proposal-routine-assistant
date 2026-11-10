@@ -161,9 +161,44 @@ def _http(method: str, url: str, token: str, body: dict | None = None, timeout: 
         return r.status, (json.loads(raw) if raw else None)
 
 
+def _log_to_file() -> None:
+    """pythonw(콘솔 창 없음)로 실행되면 stdout이 없으므로 스크립트 옆 worker.log에 기록한다 (1MB 넘으면 새로 시작)."""
+    log = Path(__file__).resolve().with_name("worker.log")
+    try:
+        if log.exists() and log.stat().st_size > 1_000_000:
+            log.replace(log.with_suffix(".log.old"))
+        f = open(log, "a", encoding="utf-8", errors="replace", buffering=1)
+    except OSError:
+        f = open(os.devnull, "w")
+    sys.stdout = sys.stderr = f
+    print(f"\n===== {time.strftime('%Y-%m-%d %H:%M:%S')} 실행기 시작 =====")
+
+
+_LOCK = None
+
+
+def _single_instance() -> bool:
+    """같은 PC에서 실행기가 두 개 돌지 않게 로컬 포트를 잠금으로 쓴다."""
+    global _LOCK
+    import socket
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind(("127.0.0.1", 47831))
+    except OSError:
+        s.close()
+        return False
+    _LOCK = s
+    return True
+
+
 def worker_main(argv: list[str] | None = None) -> None:
-    if hasattr(sys.stdout, "reconfigure"):  # 한글이 깨지지 않게, 로그 파일로 돌려도 바로 보이게
+    if sys.stdout is None or sys.stderr is None:
+        _log_to_file()
+    elif hasattr(sys.stdout, "reconfigure"):  # 한글이 깨지지 않게, 로그 파일로 돌려도 바로 보이게
         sys.stdout.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
+    if not _single_instance():
+        print("[종료] 이 PC에서 실행기가 이미 실행 중입니다.")
+        return
     ap = argparse.ArgumentParser(description="제안서 루틴 도우미 — 내 PC의 Claude Code로 분석하는 실행기")
     ap.add_argument("--server", help="서버 주소 (예: https://xxxx.trycloudflare.com)")
     ap.add_argument("--token", help="웹 '⚙ 내 AI 연결'에서 발급한 실행기 토큰")
@@ -182,19 +217,27 @@ def worker_main(argv: list[str] | None = None) -> None:
         CONFIG.write_text(json.dumps({"server": server, "token": token}), encoding="utf-8")
 
     st = cli_status()
+    for _ in range(12):  # PC 부팅 직후에는 잠깐 확인이 실패할 수 있어 1분까지 다시 시도한다
+        if st.get("installed") and st.get("loggedIn"):
+            break
+        time.sleep(5)
+        st = cli_status()
     if not st.get("installed"):
-        sys.exit("[실패] Claude Code가 없습니다. 설치: https://claude.com/claude-code (Windows: irm https://claude.ai/install.ps1 | iex)")
+        print("[실패] Claude Code가 없습니다. 설치: https://claude.com/claude-code (Windows: irm https://claude.ai/install.ps1 | iex)")
+        sys.exit(1)
     if not st.get("loggedIn"):
-        sys.exit("[실패] Claude Code에 로그인되어 있지 않습니다. 터미널에서 claude auth login 을 먼저 실행하세요.")
+        print("[실패] Claude Code에 로그인되어 있지 않습니다. 터미널에서 claude auth login 을 먼저 실행하세요.")
+        sys.exit(1)
     print(f"[시작] 서버 {server} 에 연결합니다 · Claude Code 계정: {st.get('email') or '-'}")
-    print("       이 창을 켜 두면 웹에서 실행한 내 분석이 이 PC의 Claude Code로 처리됩니다. 종료: Ctrl+C")
+    print("       실행기가 켜져 있으면 웹에서 실행한 내 분석이 이 PC의 Claude Code로 처리됩니다.")
     online = False
     while True:
         try:
-            status, job = _http("GET", f"{server}/api/worker/poll", token, timeout=60)
-            if not online:
+            if not online:  # 연결을 바로 확인한다 (poll은 작업이 없으면 25초 동안 응답하지 않음)
+                _http("GET", f"{server}/api/worker/hello", token, timeout=15)
                 print("[연결됨] 작업을 기다리는 중...")
                 online = True
+            status, job = _http("GET", f"{server}/api/worker/poll", token, timeout=60)
             if status != 200 or not job:
                 continue
             print(f"[작업] {time.strftime('%H:%M:%S')} {job.get('label') or '분석'} 처리 중...")
@@ -208,7 +251,8 @@ def worker_main(argv: list[str] | None = None) -> None:
             _http("POST", f"{server}/api/worker/result/{job['id']}", token, result, timeout=120)
         except urllib.error.HTTPError as e:
             if e.code == 401:
-                sys.exit("[실패] 토큰이 올바르지 않습니다. 웹 '⚙ 내 AI 연결'에서 토큰을 다시 발급해 --token 으로 실행하세요.")
+                print("[실패] 토큰이 올바르지 않습니다. 웹 '⚙ 내 AI 연결'에서 설치 파일을 다시 받아 실행하세요.")
+                sys.exit(1)
             print(f"[대기] 서버 응답 오류({e.code}) — 10초 뒤 다시 시도")
             online = False
             time.sleep(10)
