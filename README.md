@@ -90,6 +90,7 @@ python manage.py tunnel start   # 외부 접속 주소 열기 (stop / status)
 
 ### macOS / Linux
 `./setup.sh` → `./run.sh` (업데이트는 `git pull` 후 `./setup.sh`). 템플릿 미리보기 이미지는 PowerPoint가 있는 Windows에서만 만들어지며, 그 외 기능은 동일합니다.
+Linux 서버에는 한글 글꼴이 없어 RFP 비교표 이미지의 한글이 깨질 수 있습니다. `sudo apt-get install fonts-nanum`으로 나눔글꼴을 설치하세요(설치 후 서버 재시작 불필요).
 
 ## 저장소에 포함되는 것 / 포함되지 않는 것
 | 포함 | 포함하지 않음 (PC마다 따로) |

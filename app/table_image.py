@@ -1,4 +1,5 @@
 """비교 분석 결과 → 표 이미지(PNG)."""
+import logging
 import unicodedata
 from pathlib import Path
 
@@ -9,15 +10,37 @@ import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib import font_manager  # noqa: E402
 from matplotlib.patches import Rectangle  # noqa: E402
 
-_KR_FONTS = ["Malgun Gothic", "맑은 고딕", "NanumGothic", "AppleGothic", "Noto Sans CJK KR"]
+# 나눔고딕처럼 굵은 글꼴 굵기가 700이 아닌 경우 매 글자마다 "weight bold" 경고가 찍히므로 끈다
+logging.getLogger("matplotlib.font_manager").setLevel(logging.ERROR)
+
+_KR_FONTS = ["Malgun Gothic", "맑은 고딕", "NanumGothic", "NanumBarunGothic", "AppleGothic", "Apple SD Gothic Neo",
+             "Noto Sans CJK KR", "Noto Sans KR", "UnDotum"]
+_KR_FONT_HINT = "Linux 서버라면 한글 글꼴을 설치하세요: sudo apt-get install fonts-nanum"
+
+
+_KR_FILE_HINTS = ("malgun", "nanum", "notosanscjk", "notosanskr", "applegothic", "applesdgothic", "undotum")
+
+
+def _korean_font_name() -> str | None:
+    names = {f.name for f in font_manager.fontManager.ttflist}
+    return next((f for f in _KR_FONTS if f in names), None)
 
 
 def _set_korean_font() -> None:
-    names = {f.name for f in font_manager.fontManager.ttflist}
-    for f in _KR_FONTS:
-        if f in names:
-            plt.rcParams["font.family"] = f
-            break
+    """한글 글꼴을 찾아 지정한다. 글꼴을 나중에 설치해 matplotlib 글꼴 캐시에 없으면 시스템 글꼴 파일을 직접 등록한다."""
+    found = _korean_font_name()
+    if not found:
+        for path in font_manager.findSystemFonts():
+            if any(h in Path(path).name.lower().replace("-", "").replace("_", "") for h in _KR_FILE_HINTS):
+                try:
+                    font_manager.fontManager.addfont(path)
+                except Exception:  # noqa: BLE001 — 읽을 수 없는 글꼴 파일은 건너뛴다
+                    pass
+        found = _korean_font_name()
+    if found:
+        plt.rcParams["font.family"] = found
+    else:
+        print(f"[경고] 한글 글꼴을 찾지 못해 비교표 이미지의 한글이 깨질 수 있습니다. {_KR_FONT_HINT}", flush=True)
     plt.rcParams["axes.unicode_minus"] = False
 
 
