@@ -22,20 +22,20 @@
     <label class="muted">사업명 (표지·머리말 · Enter로 줄을 나누면 1줄=주 사업명, 2줄=세부 과정명)</label>
     <textarea id="ptitle" rows="2" placeholder="예: 26년 실전형 사이버훈련장 훈련과정 운영&#10;정보보호제품군 실습훈련"></textarea>
   </div>
+  <div class="num-bar">
+    <span class="k">번호 표기</span>
+    {% for lv, name in [(1, '대목차'), (2, '중목차'), (3, '소목차')] %}
+    <label>{{ name }}<select data-lv="{{ lv }}"></select></label>
+    {% endfor %}
+    <span class="muted">'원문 유지'가 아니면 그 수준의 번호를 자동으로 매기고, 순서를 바꾸거나 행을 넣고 빼도 다시 맞춥니다.</span>
+  </div>
   <div class="toc-row muted" style="font-size:12px"><span>수준</span><span>번호</span><span>제목</span><span>작성 지침 (발표자 노트에 기재)</span><span></span></div>
   <div id="toc"></div>
 </div>
 
-<div class="card">
-  <div style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap">
-    <div style="flex:1 1 380px"><h2 style="margin:0 0 4px">③ PPT 생성</h2><span class="muted">표지 → (조견표) → 목차 → 대제목 간지 → 중·소제목 본문 → (뒷표지) 순으로 구성됩니다. 작성 지침은 발표자 노트에 들어갑니다.</span></div>
-    <button class="btn primary" id="build">▶ PPT 생성</button>
-  </div>
-  <div class="num-style">
-    <span class="k">대목차 번호 표기</span>
-    <select id="numstyle">{% for k, v in num_styles.items() %}<option value="{{ k }}">{{ v }}</option>{% endfor %}</select>
-    <span class="muted" id="numhint"></span>
-  </div>
+<div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:16px;flex-wrap:wrap">
+  <div style="flex:1 1 380px"><h2 style="margin:0 0 4px">③ PPT 생성</h2><span class="muted">표지 → (조견표) → 목차 → 대제목 간지 → 중·소제목 본문 → (뒷표지) 순으로 구성됩니다. 목차의 번호는 ②에 보이는 그대로 들어가고, 작성 지침은 발표자 노트에 들어갑니다.</span></div>
+  <button class="btn primary" id="build">▶ PPT 생성</button>
 </div>
 <div class="card" id="outputs"></div>
 {% endblock %}
@@ -48,38 +48,48 @@ let toc = s3.toc || [];
 let selected = tpls.some(t => t.file === s3.template) ? s3.template : (tpls[0] || {}).file;
 document.getElementById("ptitle").value = s3.proposal_title || "";
 
-const numSel = document.getElementById("numstyle");
-numSel.value = s3.num_style || "auto";
-const payload = () => ({ toc, template: selected, proposal_title: document.getElementById("ptitle").value, num_style: numSel.value });
-
-// 대목차 번호 표기: '자동'이면 목차의 대목차 번호 원문을 보고 정한다 (서버 pptx_form.detect_num_style과 같은 규칙)
-const ROMAN = "ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩⅪⅫ";
-const SAMPLE = { arabic: "01 · 02 · 03", roman: "Ⅰ · Ⅱ · Ⅲ", circled: "① · ② · ③" };
-function detectNumStyle() {
-  const v = { roman: 0, circled: 0, arabic: 0 };
-  toc.filter(t => +t.level === 1).forEach(t => {
-    let n = String(t.number || "").trim().replace(/[\s.)\]:]+$/, "").replace(/^[(\[]/, "").replace(/\s*[장편부]$/, "").replace(/^제\s*/, "");
-    if (!n) return;
-    if (ROMAN.includes(n[0]) || /^(?=[IVXLC])M*(C[MD]|D?C{0,3})(X[CL]|L?X{0,3})(I[XV]|V?I{0,3})$/.test(n.toUpperCase())) v.roman++;
-    else if (/^[\u2460-\u2473\u3251-\u325f\u32b1-\u32bf]/.test(n)) v.circled++;
-    else if (/^\d/.test(n)) v.arabic++;
+// ---- 수준별 번호 표기: keep(원문 유지)가 아니면 목차 순서대로 번호를 다시 매긴다 ----
+const ROMAN = "ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩⅪⅫ", HANGUL = "가나다라마바사아자차카타파하";
+const roman = i => i <= 12 ? ROMAN[i - 1] : [[1000,"M"],[900,"CM"],[500,"D"],[400,"CD"],[100,"C"],[90,"XC"],[50,"L"],[40,"XL"],[10,"X"],[9,"IX"],[5,"V"],[4,"IV"],[1,"I"]].reduce((o, [v, r]) => { while (i >= v) { o += r; i -= v; } return o; }, "");
+const circled = i => i <= 20 ? String.fromCharCode(0x2460 + i - 1) : i <= 35 ? String.fromCharCode(0x3251 + i - 21) : i <= 50 ? String.fromCharCode(0x32B1 + i - 36) : String(i);
+const STYLES = {
+  keep:    { t: "원문 유지",        f: null },
+  arabic:  { t: "1 · 2 · 3",       f: i => String(i) },
+  arabic2: { t: "01 · 02 · 03",    f: i => String(i).padStart(2, "0") },
+  roman:   { t: "Ⅰ · Ⅱ · Ⅲ",       f: roman },
+  circled: { t: "① · ② · ③",       f: circled },
+  hangul:  { t: "가 · 나 · 다",     f: i => HANGUL[i - 1] || String(i) },
+  paren:   { t: "(1) · (2) · (3)", f: i => `(${i})` },
+  hier:    { t: "상위 번호 포함",    f: null },
+};
+const LEVEL_STYLES = { 1: ["keep", "arabic", "arabic2", "roman", "circled", "hangul"],
+                       2: ["keep", "arabic", "arabic2", "roman", "circled", "hangul", "paren", "hier"],
+                       3: ["keep", "arabic", "circled", "hangul", "paren", "hier"] };
+// 예전 버전의 '대목차 번호 표기'(num_style) 값을 이어받는다
+const legacy = { arabic: "arabic2", roman: "roman", circled: "circled" }[s3.num_style];
+let numStyles = Object.assign({ 1: legacy || "keep", 2: "keep", 3: "keep" }, s3.num_styles || {});
+document.querySelectorAll(".num-bar select").forEach(sel => {
+  const lv = +sel.dataset.lv;
+  sel.innerHTML = LEVEL_STYLES[lv].map(k => `<option value="${k}">${k === "hier" ? (lv === 2 ? "1.1 · 1.2 (상위 번호 포함)" : "1.1.1 · 1.1.2 (상위 번호 포함)") : STYLES[k].t}</option>`).join("");
+  sel.value = LEVEL_STYLES[lv].includes(numStyles[lv]) ? numStyles[lv] : "keep";
+  sel.onchange = () => { numStyles[lv] = sel.value; renumber(); renderToc(); autosave(); };
+});
+function renumber() {
+  const c = [0, 0, 0];  // 대·중·소 순번 (상위가 바뀌면 하위는 1부터)
+  toc.forEach(t => {
+    const lv = Math.min(Math.max(+t.level || 1, 1), 3);
+    c[lv - 1]++; for (let k = lv; k < 3; k++) c[k] = 0;
+    const st = numStyles[lv] || "keep";
+    if (st === "keep") { if (t.orig !== undefined) { t.number = t.orig; delete t.orig; } return; }
+    if (t.orig === undefined) t.orig = t.number || "";  // '원문 유지'로 돌아갈 때 복원
+    t.number = st === "hier" ? c.slice(0, lv).map(n => n || 1).join(".") : STYLES[st].f(c[lv - 1]);
   });
-  const best = Object.keys(v).reduce((a, b) => v[b] > v[a] ? b : a);
-  return v[best] ? best : "arabic";
 }
-function numHint() {
-  const el = document.getElementById("numhint");
-  if (numSel.value !== "auto") { el.textContent = "간지·목차 슬라이드의 대목차 번호가 이 표기로 들어갑니다."; return; }
-  const d = detectNumStyle();
-  const has = toc.some(t => +t.level === 1 && String(t.number || "").trim());
-  el.textContent = has ? `→ RFP 목차 원문에 맞춰 ${SAMPLE[d]} 로 표기합니다.` : `→ 대목차 번호가 없어 기본 ${SAMPLE.arabic} 로 표기합니다.`;
-}
-numSel.onchange = () => { numHint(); autosave(); };
+const payload = () => ({ toc, template: selected, proposal_title: document.getElementById("ptitle").value, num_styles: numStyles });
 
 // 변경 시 자동 저장 (화면을 옮겨도 편집 내용 유지)
 let saveTimer;
 function autosave() {
-  if (typeof numHint === "function") numHint();
   const st = document.getElementById("savestate");
   st.textContent = "· 저장 중...";
   clearTimeout(saveTimer);
@@ -107,7 +117,7 @@ function renderToc() {
   box.innerHTML = toc.map((t, i) => `
     <div class="toc-row l${t.level}" data-i="${i}">
       <select data-k="level">${[1, 2, 3].map(l => `<option value="${l}" ${t.level == l ? "selected" : ""}>${["대", "중", "소"][l - 1]}목차</option>`).join("")}</select>
-      <input data-k="number" value="${esc(t.number)}">
+      <input data-k="number" value="${esc(t.number)}" ${(numStyles[t.level] || "keep") !== "keep" ? `readonly class="auto-num" title="위 '번호 표기'에서 자동으로 매긴 번호입니다. 직접 고치려면 이 수준을 '원문 유지'로 바꾸세요."` : ""}>
       <input class="t-title" data-k="title" value="${esc(t.title)}">
       <textarea data-k="guide" rows="1">${esc(t.guide)}</textarea>
       <div class="ops">
@@ -119,7 +129,8 @@ function renderToc() {
     const i = +row.dataset.i;
     row.querySelectorAll("[data-k]").forEach(inp => inp.onchange = () => {
       toc[i][inp.dataset.k] = inp.dataset.k === "level" ? +inp.value : inp.value;
-      if (inp.dataset.k === "level") renderToc();
+      if (inp.dataset.k === "number") delete toc[i].orig;  // 직접 고친 번호를 새 원문으로
+      if (inp.dataset.k === "level") { renumber(); renderToc(); }
       autosave();
     });
     row.querySelectorAll("[data-op]").forEach(b => b.onclick = () => {
@@ -128,7 +139,7 @@ function renderToc() {
       if (op === "down" && i < toc.length - 1) [toc[i + 1], toc[i]] = [toc[i], toc[i + 1]];
       if (op === "ins") toc.splice(i + 1, 0, { level: toc[i].level, number: "", title: "새 항목", guide: "" });
       if (op === "del") toc.splice(i, 1);
-      renderToc(); autosave();
+      renumber(); renderToc(); autosave();
     });
   });
 }
@@ -145,10 +156,10 @@ document.getElementById("extract").onclick = async () => {
   if (toc.length && !confirm("현재 목차를 RFP에서 새로 추출한 목차로 바꿀까요?")) return;
   try {
     s3 = { ...s3, ...await runLong("Claude가 RFP에서 제안서 목차를 추출하는 중...", () => api("POST", `/api/projects/${PID}/step3/toc`)) };
-    toc = s3.toc; document.getElementById("ptitle").value = s3.proposal_title || ""; renderToc(); numHint(); toast(`목차 ${toc.length}개 추출`);
+    toc = s3.toc; document.getElementById("ptitle").value = s3.proposal_title || ""; renumber(); renderToc(); toast(`목차 ${toc.length}개 추출`);
   } catch (e) {}
 };
-document.getElementById("addrow").onclick = () => { toc.push({ level: 1, number: "", title: "새 항목", guide: "" }); renderToc(); autosave(); };
+document.getElementById("addrow").onclick = () => { toc.push({ level: 1, number: "", title: "새 항목", guide: "" }); renumber(); renderToc(); autosave(); };
 document.getElementById("build").onclick = async () => {
   if (!toc.length) return toast("목차가 비어 있습니다", true);
   clearTimeout(saveTimer);
@@ -161,6 +172,6 @@ document.getElementById("build").onclick = async () => {
   } catch (e) { toast(e.message, true); }
   finally { busy(false); }
 };
-renderTpls(); renderToc(); renderOutputs(); numHint();
+renumber(); renderTpls(); renderToc(); renderOutputs();
 </script>
 {% endblock %}

@@ -247,7 +247,7 @@ def _replace_total_pages(prs, total: int) -> None:
                         r.text = re.sub(r"\d+", str(total), r.text)
 
 
-def _fill_toc(slide, chapters: list[str], slide_h: int, num_style: str = "arabic") -> None:
+def _fill_toc(slide, chapters: list[str], slide_h: int, nums: list[str] | None = None) -> None:
     """'01 + 대제목' 그룹을 대제목 수에 맞게 복제/삭제하고 세로 간격을 맞춘다."""
     def is_item(g):
         texts = [s.text_frame.text.strip() for s in _iter_shapes(g.shapes) if s.has_text_frame]
@@ -281,7 +281,7 @@ def _fill_toc(slide, chapters: list[str], slide_h: int, num_style: str = "arabic
                 continue
             t = s.text_frame.text.strip()
             if re.fullmatch(r"\d{1,2}", t):
-                _set_para(s.text_frame.paragraphs[0], chapter_num(i + 1, num_style))
+                _set_para(s.text_frame.paragraphs[0], nums[i] if nums else f"{i + 1:02d}")
             elif t:
                 _set_lines(s.text_frame, [title])
 
@@ -359,6 +359,15 @@ def chapter_num(i: int, style: str, pad: bool = True) -> str:
     return f"{i:02d}" if pad else str(i)
 
 
+def chapter_nums(chapters: list[dict], style: str) -> list[str]:
+    """간지·목차 슬라이드에 넣을 대목차 번호 목록. style == "toc"면 목차 편집에서 매긴 번호를 그대로 쓴다."""
+    out = []
+    for ci, ch in enumerate(chapters, 1):
+        n = re.sub(r"[.\s]+$", "", (ch["item"].get("number") or "").strip()) if style == "toc" else ""
+        out.append(n or chapter_num(ci, "arabic" if style == "toc" else style))
+    return out
+
+
 def _num_dot(num: str) -> str:
     num = (num or "").strip()
     return num if not num or num.endswith((".", ")")) else num + "."
@@ -400,6 +409,7 @@ def build_form_pptx(template: Path, toc: list[dict], title: str, out: Path, ym: 
     sec_ph, body_ph = form["section_ph"], form["body_ph"]
 
     chapters = chapter_tree(toc)
+    nums = chapter_nums(chapters, num_style)
     ordered = []
     if "cover" in form:
         cover = src[form["cover"]]
@@ -410,14 +420,14 @@ def build_form_pptx(template: Path, toc: list[dict], title: str, out: Path, ym: 
         ordered.append(src[form["summary"]])
     if "toc" in form:
         toc_slide = src[form["toc"]]
-        _fill_toc(toc_slide, [c["item"].get("title", "") for c in chapters], prs.slide_height, num_style)
+        _fill_toc(toc_slide, [c["item"].get("title", "") for c in chapters], prs.slide_height, nums)
         _renumber_ids(toc_slide)
         ordered.append(toc_slide)
 
     for ci, ch in enumerate(chapters, 1):
         sec = _duplicate(prs, src[form["section"]])
         if "num" in sec_ph and _ph(sec, sec_ph["num"]) is not None:
-            _set_lines(_ph(sec, sec_ph["num"]).text_frame, [chapter_num(ci, num_style)])
+            _set_lines(_ph(sec, sec_ph["num"]).text_frame, [nums[ci - 1]])
         if _ph(sec, sec_ph["title"]) is not None:
             _set_lines(_ph(sec, sec_ph["title"]).text_frame, [ch["item"].get("title", "")])
         if "list" in sec_ph and _ph(sec, sec_ph["list"]) is not None:

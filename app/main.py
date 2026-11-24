@@ -473,9 +473,7 @@ def scoring_page(request: Request, pid: str):
 
 @app.get("/workspaces/{pid}/step3", response_class=HTMLResponse)
 def step3_page(request: Request, pid: str):
-    from .pptx_form import NUM_STYLES
-    return _render(request, "step3.html", p=_project(pid), active="step3", tpls=tpl_store.list_templates(),
-                   num_styles=NUM_STYLES)
+    return _render(request, "step3.html", p=_project(pid), active="step3", tpls=tpl_store.list_templates())
 
 
 # ---------------- 워크스페이스 / 파일 ----------------
@@ -899,18 +897,27 @@ def step3_toc(pid: str):
 @app.put("/api/projects/{pid}/step3/toc")
 def step3_save(pid: str, data: dict = Body(...)):
     p = _project(pid)
-    for key in ("toc", "proposal_title", "template", "company", "num_style"):
+    for key in ("toc", "proposal_title", "template", "company", "num_styles"):
         if key in data:
             p["step3"][key] = data[key]
     storage.save_project(p)
     return p["step3"]
 
 
+def _chapter_num_style(s3: dict) -> str:
+    """목차 편집의 대목차 번호 표기가 '원문 유지'가 아니면 목차에 매긴 번호를 그대로(toc),
+    원문 유지면 원문 번호를 보고 자동 결정(auto). 예전 버전의 num_style 값도 이어받는다."""
+    lv1 = (s3.get("num_styles") or {}).get("1")
+    if lv1:
+        return "auto" if lv1 == "keep" else "toc"
+    return s3.get("num_style") or "auto"
+
+
 @app.post("/api/projects/{pid}/step3/build")
 def step3_build(pid: str, data: dict = Body(default={})):
     p = _project(pid)
     s3 = p["step3"]
-    for key in ("toc", "proposal_title", "template", "company", "num_style"):
+    for key in ("toc", "proposal_title", "template", "company", "num_styles"):
         if key in data:
             s3[key] = data[key]
     if not s3.get("toc"):
@@ -923,7 +930,7 @@ def step3_build(pid: str, data: dict = Body(default={})):
     ym = p.get("deadline", "")[:7].replace("-", ".") or None
     build_proposal_pptx(tpl_store.path(t["file"]), s3["toc"], s3.get("proposal_title", "") or p["name"],
                         s3.get("company", ""), storage.output_dir(pid) / fname, t.get("mapping"), ym,
-                        s3.get("num_style") or "auto")
+                        _chapter_num_style(s3))
     s3["template"] = t["file"]
     s3.setdefault("outputs", []).insert(0, fname)
     storage.save_project(p)

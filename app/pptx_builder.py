@@ -174,11 +174,11 @@ SAMPLE_TOC = [
 
 def build_proposal_pptx(template: Path, toc: list[dict], proposal_title: str, company: str, out: Path,
                         mapping: dict | None = None, ym: str | None = None, num_style: str = "auto") -> Path:
-    """num_style: 대목차 번호 표기 — auto(RFP 원문 따름) / arabic(01) / roman(Ⅰ) / circled(①)."""
+    """num_style: 대목차 번호 — toc(목차 편집에서 매긴 번호 그대로) / auto(RFP 원문 보고 결정) / arabic(01) / roman(Ⅰ) / circled(①)."""
     from .pptx_form import build_form_pptx, chapter_num, detect_form, resolve_num_style
     from .pptx_token import build_token_pptx, detect_token_form
 
-    style = resolve_num_style(num_style, toc)
+    style = "toc" if num_style == "toc" else resolve_num_style(num_style, toc)
     probe = Presentation(str(template))
     if detect_token_form(probe) is not None:  # 토큰형 양식({{토큰}} + #역할 노트)
         return build_token_pptx(template, toc, proposal_title, out, ym, style)
@@ -188,7 +188,7 @@ def build_proposal_pptx(template: Path, toc: list[dict], proposal_title: str, co
     ci = 0
     toc = [dict(t) for t in toc]
     for t in toc:
-        if int(t.get("level", 1)) == 1:
+        if style != "toc" and int(t.get("level", 1)) == 1:
             ci += 1
             t["number"] = chapter_num(ci, style, pad=False)
     proposal_title = " ".join(proposal_title.splitlines())
