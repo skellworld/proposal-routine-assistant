@@ -89,6 +89,53 @@ def bound(fn):
     return lambda *a, **k: ctx.run(fn, *a, **k)
 
 
+# ---------------- 진행 중인 AI 작업 현황 (상태 정보 메뉴용) ----------------
+_task: contextvars.ContextVar = contextvars.ContextVar("ai_task", default=None)
+_active: dict = {}  # 호출 id -> {label, pid, user, provider, started, wjob}
+_active_lock = threading.Lock()
+
+
+class task:
+    """이 문맥에서 일어나는 AI 호출에 이름을 붙인다: with claude_client.task("RFP 비교 분석", pid): ..."""
+
+    def __init__(self, label: str, pid: str = ""):
+        self.info = {"label": label, "pid": pid}
+
+    def __enter__(self):
+        self.token = _task.set(self.info)
+        return self
+
+    def __exit__(self, *exc):
+        _task.reset(self.token)
+        return False
+
+
+def labeled(label: str, pid: str, fn):
+    """다른 스레드로 넘길 함수에 작업 이름을 붙인다 (bound와 함께: bound(labeled(...)))."""
+    def run(*a, **k):
+        with task(label, pid):
+            return fn(*a, **k)
+    return run
+
+
+def active_tasks() -> list[dict]:
+    """진행 중인 AI 호출 목록 (오래된 것부터). 실행기 작업은 '내 PC 전달 대기 / 내 PC에서 처리 중'을 구분한다."""
+    now = time.time()
+    out = []
+    with _active_lock:
+        items = sorted(_active.values(), key=lambda x: x["started"])
+    for a in items:
+        stage = "AI 응답 대기"
+        if a["provider"] == "worker":
+            j = _jobs.get(a.get("wjob") or "")
+            stage = "내 PC에서 처리 중" if j and j["taken"] else "내 PC로 전달 대기"
+        elif a["provider"] == "cli":
+            stage = "서버 PC Claude Code 처리 중"
+        out.append({"label": a["label"], "pid": a["pid"], "user": a["user"], "provider": a["provider"],
+                    "stage": stage, "elapsed": int(now - a["started"]), "started": a["started"]})
+    return out
+
+
 def _cfg() -> dict:
     cfg = _ctx.get()
     if not cfg or cfg.get("provider") in (None, "", "none"):
@@ -120,6 +167,20 @@ def call_json(system: str, content: list[dict], schema: dict, max_tokens: int = 
               effort: str | None = None, light: bool = False) -> dict:
     """light=True: 짧은 보조 작업(템플릿 설명 등) — 가벼운 설정으로 호출."""
     cfg = _cfg()
+    t = _task.get() or {}
+    aid = uuid.uuid4().hex
+    with _active_lock:
+        _active[aid] = {"label": t.get("label") or ("보조 작업" if light else "AI 분석"), "pid": t.get("pid", ""),
+                        "user": cfg.get("username", ""), "provider": cfg["provider"], "started": time.time(), "wjob": ""}
+    try:
+        return _dispatch(cfg, aid, system, content, schema, max_tokens, effort, light)
+    finally:
+        with _active_lock:
+            _active.pop(aid, None)
+
+
+def _dispatch(cfg: dict, aid: str, system: str, content: list[dict], schema: dict, max_tokens: int,
+              effort: str | None, light: bool) -> dict:
     if cfg["provider"] == "cli":
         if not cfg.get("local"):
             raise ClaudeError("'이 PC의 Pro 계정'은 서버 PC에서 직접 접속할 때만 쓸 수 있습니다. 내 AI 연결에서 다른 방식을 설정하세요.")
@@ -129,7 +190,7 @@ def call_json(system: str, content: list[dict], schema: dict, max_tokens: int = 
         except cli_runner.CliError as e:
             raise ClaudeError(str(e)) from e
     if cfg["provider"] == "worker":
-        return _call_worker(cfg, system, content, schema, light)
+        return _call_worker(cfg, system, content, schema, light, aid)
     if cfg["provider"] == "openai":
         return _call_openai(cfg, system, content, schema, max_tokens)
     return _call_api(cfg, system, content, schema, max_tokens, effort or ("low" if light else EFFORT))
@@ -174,7 +235,7 @@ def worker_finish(username: str, job_id: str, result: dict) -> bool:
     return True
 
 
-def _call_worker(cfg: dict, system: str, content: list[dict], schema: dict, light: bool) -> dict:
+def _call_worker(cfg: dict, system: str, content: list[dict], schema: dict, light: bool, aid: str = "") -> dict:
     user = cfg.get("username", "")
     if not worker_online(user):
         raise ClaudeError("내 PC의 분석 실행기가 꺼져 있습니다. 내 PC에서 실행기(proposal-worker.py)를 켠 뒤 다시 시도하세요.")
@@ -187,6 +248,9 @@ def _call_worker(cfg: dict, system: str, content: list[dict], schema: dict, ligh
         _jobs[jid] = job
         _queues.setdefault(user, []).append(job)
         _wq.notify_all()
+    with _active_lock:
+        if aid in _active:
+            _active[aid]["wjob"] = jid
     try:
         deadline = time.time() + CLI_TIMEOUT + 120
         while not job["event"].wait(5):

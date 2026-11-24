@@ -219,7 +219,8 @@ def test_connection(request: Request):
     me = auth.get(_me(request)["username"])
     claude_client.use({**auth.ai_config(me), "local": request.state.local, "username": me["username"]})
     t = time.time()
-    out = claude_client.call_json("짧게 답하세요.", [{"type": "text", "text": "연결 테스트입니다. '연결 성공'이라고만 답하세요."}],
+    with claude_client.task("AI 연결 테스트"):
+        out = claude_client.call_json("짧게 답하세요.", [{"type": "text", "text": "연결 테스트입니다. '연결 성공'이라고만 답하세요."}],
                                   schema, max_tokens=1000, light=True)
     return {"ok": True, "provider": claude_client.active_backend(), "seconds": round(time.time() - t, 1),
             "reply": out.get("reply", "")}
@@ -603,6 +604,24 @@ def step1_status(pid: str):
     return _analyze_state(pid)
 
 
+PROVIDER_LABELS = {"worker": "내 PC Claude Code", "anthropic": "Claude API", "openai": "ChatGPT API",
+                   "cli": "서버 PC Pro 계정"}
+
+
+@app.get("/api/ai/status")
+def ai_status(request: Request):
+    """상태 정보 메뉴: 팀 전체의 진행 중인 AI 작업 + 내 AI 연결 상태."""
+    me = request.state.user
+    names = {w["id"]: w["name"] for w in storage.list_projects()}
+    users = {u["username"]: u["name"] for u in auth.list_users()}
+    tasks = [{**t, "workspace": names.get(t["pid"], ""), "user_name": users.get(t["user"], t["user"]),
+              "mine": t["user"] == me["username"], "provider_label": PROVIDER_LABELS.get(t["provider"], t["provider"])}
+             for t in claude_client.active_tasks()]
+    prov = (me.get("ai") or {}).get("provider", "")
+    return {"tasks": tasks, "me": {"provider": prov, "provider_label": PROVIDER_LABELS.get(prov, "연결 안 함"),
+                                   "worker_online": claude_client.worker_online(me["username"]) if prov == "worker" else None}}
+
+
 @app.get("/api/jobs")
 def running_jobs():
     """사이드바·알림용: 진행 중인 분석 작업 목록."""
@@ -624,9 +643,11 @@ def _run_analyze(pid: str) -> dict:
     _strategy_job(pid, force=True)
     # 현재 공고서가 있으면 공고서 분석·체크리스트도 동시에 생성한다
     with ThreadPoolExecutor(max_workers=2) as pool:
-        f_compare = pool.submit(claude_client.bound(analysis.analyze_rfp), docs["current_rfp"], docs["notice"],
+        f_compare = pool.submit(claude_client.bound(claude_client.labeled("RFP 비교 분석", pid, analysis.analyze_rfp)),
+                                docs["current_rfp"], docs["notice"],
                                 docs["past_rfp"], docs["past_notice"])
-        f_check = pool.submit(claude_client.bound(analysis.build_checklist), docs["notice"]) if docs["notice"] else None
+        f_check = (pool.submit(claude_client.bound(claude_client.labeled("공고서 분석·체크리스트", pid, analysis.build_checklist)),
+                               docs["notice"]) if docs["notice"] else None)
         result = f_compare.result()
         check, check_error = None, ""
         if f_check is not None:
@@ -702,8 +723,9 @@ def _run_strategy(pid: str) -> dict:
         raise ValueError("현재 RFP 또는 현재 공고서를 먼저 업로드하세요(1단계).")
     members = company.resolve(p.get("companies"))
     profile = company.prompt_block(members)
-    result = analysis.build_strategy(docs["current_rfp"], docs["notice"], docs["past_rfp"],
-                                     docs["past_notice"], _strategy_context(p), profile)
+    with claude_client.task("핵심 추진 전략·배점표", pid):
+        result = analysis.build_strategy(docs["current_rfp"], docs["notice"], docs["past_rfp"],
+                                         docs["past_notice"], _strategy_context(p), profile)
     result["generated_at"] = storage.now()
     result["company_applied"] = company.signature(members) if profile else ""
     result["company_names"] = [c["name"] for c in members] if profile else []
@@ -751,7 +773,9 @@ def step2_generate(pid: str):
     docs = _files(p, "notice") or _files(p, "current_rfp")
     if not docs:
         raise HTTPException(400, "공고서 또는 현재 RFP를 먼저 업로드하세요.")
-    _apply_checklist(p, analysis.build_checklist(docs), docs)
+    with claude_client.task("공고서 분석·체크리스트", pid):
+        result = analysis.build_checklist(docs)
+    _apply_checklist(p, result, docs)
     storage.save_project(p)
     return p["step2"]
 
@@ -810,7 +834,8 @@ def upload_template(file: UploadFile = File(...), name: str = Form(""), descript
         return {**t, "structure_error": NO_AI_MSG}
     if structure and (t.get("form") or {}).get("kind") != "token":  # 이미 토큰형 양식이면 그대로 둔다
         try:
-            t = tpl_store.structure(t["file"])
+            with claude_client.task(f"템플릿 구조화 · {t.get('name') or t['file']}"):
+                t = tpl_store.structure(t["file"])
         except (ClaudeError, ValueError) as e:
             t = {**tpl_store.get(t["file"]), "structure_error": str(e)}
     return t
@@ -820,7 +845,8 @@ def upload_template(file: UploadFile = File(...), name: str = Form(""), descript
 def structure_template(file: str):
     _tpl_or_404(file)
     try:
-        return tpl_store.structure(file)
+        with claude_client.task(f"템플릿 구조화 · {(tpl_store.get(file) or {}).get('name') or file}"):
+            return tpl_store.structure(file)
     except ValueError as e:
         raise HTTPException(400, str(e)) from e
 
@@ -861,7 +887,8 @@ def delete_template(file: str):
 @app.post("/api/templates/{file}/describe")
 def describe_template(file: str):
     _tpl_or_404(file)
-    return tpl_store.redescribe(file)
+    with claude_client.task(f"템플릿 설명 · {(tpl_store.get(file) or {}).get('name') or file}"):
+        return tpl_store.redescribe(file)
 
 
 @app.get("/api/templates/{file}/download")
@@ -887,7 +914,8 @@ def step3_toc(pid: str):
     docs = _files(p, "current_rfp")
     if not docs:
         raise HTTPException(400, "현재 RFP를 먼저 업로드하세요(단계 1).")
-    result = analysis.extract_toc(docs)
+    with claude_client.task("목차 추출", pid):
+        result = analysis.extract_toc(docs)
     p["step3"].update({"toc": result["toc"], "proposal_title": result["proposal_title"],
                        "toc_at": storage.now()})
     storage.save_project(p)

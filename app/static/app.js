@@ -133,6 +133,7 @@ const Router = {
   reload() { return this.go(location.pathname + location.search, { push: false, keepScroll: true }); },
 
   runPageScripts() {
+    AiStatus.mount();  // 본문을 바꾸면 상태 표시줄도 새로 그려지므로 다시 연결
     document.querySelectorAll('#content script[type="text/x-page"]').forEach(old => {
       const s = document.createElement("script");
       s.textContent = `(() => {\n${old.textContent}\n})();`;
@@ -163,8 +164,100 @@ document.addEventListener("click", e => {
 window.addEventListener("popstate", () => Router.go(location.href, { push: false }));
 document.addEventListener("DOMContentLoaded", () => {
   Router.runPageScripts();
-  if (document.getElementById("sidebar")) Jobs.watch();  // 로그인·최초 설정 화면에서는 돌지 않는다
+  if (document.getElementById("sidebar")) { Jobs.watch(); AiStatus.start(); }  // 로그인·최초 설정 화면에서는 돌지 않는다
 });
+
+// ---------------- AI 진행 상태 (탭 아래 오른쪽 텍스트 + 누르면 말풍선) ----------------
+const AiStatus = {
+  data: null, open: false, _timer: null, _tick: null, _fetchedAt: 0,
+
+  start() {
+    this.mount();
+    this.poll();
+    // 경과 시간은 1초마다 화면에서만 늘린다 (서버 조회는 진행 중 3초, 대기 중 10초 간격)
+    this._tick = setInterval(() => { if (this.data && this.data.tasks.length) this.render(); }, 1000);
+    document.addEventListener("click", e => {
+      if (this.open && !e.target.closest(".ai-bar")) this.toggle(false);
+    });
+    document.addEventListener("keydown", e => { if (e.key === "Escape" && this.open) this.toggle(false); });
+  },
+
+  mount() {
+    const btn = document.getElementById("ai-status");
+    if (!btn || btn._bound) return;
+    btn._bound = true;
+    btn.onclick = () => { this.toggle(!this.open); if (this.open) this.poll(); };
+    this.render();
+  },
+
+  async poll() {
+    clearTimeout(this._timer);
+    try { this.data = await api("GET", "/api/ai/status"); this._fetchedAt = Date.now(); }
+    catch (e) { /* 일시적 오류는 다음 조회에서 회복 */ }
+    this.render();
+    const busy = this.data && this.data.tasks.length;
+    this._timer = setTimeout(() => this.poll(), busy || this.open ? 3000 : 10000);
+  },
+
+  toggle(on) {
+    this.open = on;
+    const btn = document.getElementById("ai-status"), pop = document.getElementById("ai-pop");
+    if (btn) btn.setAttribute("aria-expanded", on ? "true" : "false");
+    if (pop) pop.hidden = !on;
+    this.render();
+  },
+
+  fmt(sec) {
+    sec = Math.max(0, Math.round(sec));
+    const h = Math.floor(sec / 3600), m = Math.floor(sec % 3600 / 60), s = sec % 60;
+    return h ? `${h}시간 ${m}분` : m ? `${m}분 ${s}초` : `${s}초`;
+  },
+
+  render() {
+    const btn = document.getElementById("ai-status"), pop = document.getElementById("ai-pop");
+    if (!btn) return;
+    const d = this.data;
+    if (pop) pop.hidden = !this.open;
+    if (!d) return;
+    const drift = (Date.now() - this._fetchedAt) / 1000;
+    const tasks = d.tasks.map(t => ({ ...t, elapsed: t.elapsed + drift }));
+    const mine = tasks.filter(t => t.mine);
+    const workerOff = d.me.provider === "worker" && d.me.worker_online === false;
+    let cls = "idle", text = "AI 대기 중";
+    if (tasks.length) {
+      const longest = Math.max(...tasks.map(t => t.elapsed));
+      cls = "busy";
+      text = `AI 분석 진행 중 · ${tasks.length}건${mine.length && mine.length < tasks.length ? ` (내 작업 ${mine.length})` : ""} · ${this.fmt(longest)}`;
+    }
+    if (workerOff) { cls = tasks.length ? "warn" : "off"; text = (tasks.length ? text + " · " : "") + "내 PC 실행기 꺼짐"; }
+    btn.className = `ai-status ${cls}`;
+    btn.querySelector(".ai-text").textContent = text;
+    if (!this.open || !pop) return;
+
+    const row = t => `
+      <li class="ai-task ${t.mine ? "mine" : ""}">
+        <div class="ai-task-top"><b>${esc(t.label)}</b><span class="ai-el">${this.fmt(t.elapsed)}</span></div>
+        <div class="ai-task-sub">${t.workspace ? `📁 ${t.pid ? `<a href="/workspaces/${esc(t.pid)}">${esc(t.workspace)}</a>` : esc(t.workspace)}` : "📁 워크스페이스 외 작업"}</div>
+        <div class="ai-task-meta">
+          <span>👤 ${esc(t.user_name)}${t.mine ? " (나)" : ""}</span>
+          <span>🤖 ${esc(t.provider_label)}</span>
+          <span class="ai-stage ${t.stage.includes("대기") ? "wait" : "run"}">${esc(t.stage)}</span>
+        </div>
+        ${t.elapsed > 900 ? `<div class="ai-task-warn">⚠ 15분 넘게 진행 중입니다. 문서가 크면 오래 걸릴 수 있지만, 계속 멈춰 있으면 관리자에게 알려 주세요.</div>` : ""}
+        ${t.stage === "내 PC로 전달 대기" && t.mine && workerOff ? `<div class="ai-task-warn">⚠ 내 PC 실행기가 꺼져 있어 작업을 받아 가지 못하고 있습니다.</div>` : ""}
+      </li>`;
+    const worker = d.me.provider === "worker"
+      ? (d.me.worker_online ? '<span class="ok">● 연결됨</span>' : '<span class="bad">● 꺼짐</span> — <a href="/settings">설치·연결 확인</a>')
+      : esc(d.me.provider_label);
+    pop.innerHTML = `
+      <div class="ai-pop-head"><b>AI 진행 상태</b><button type="button" class="ai-pop-x" aria-label="닫기">✕</button></div>
+      ${tasks.length ? `<ul class="ai-tasks">${tasks.map(row).join("")}</ul>`
+        : `<p class="ai-empty">지금 진행 중인 AI 작업이 없습니다.</p>`}
+      <div class="ai-pop-foot"><span>내 AI 연결: ${d.me.provider === "worker" ? "내 PC Claude Code · " : ""}${worker}</span>
+        <span class="muted">${tasks.length ? "3초마다 갱신" : "팀 전체 작업 기준"}</span></div>`;
+    pop.querySelector(".ai-pop-x").onclick = () => this.toggle(false);
+  },
+};
 
 // ---------------- 백그라운드 분석 알림 ----------------
 // 어느 페이지에 있든 진행 중인 RFP 분석이 끝나면 알리고 사이드바를 갱신한다.

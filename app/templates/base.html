@@ -65,6 +65,12 @@
       </nav>
     </div>
     {% endif %}
+    <div class="ai-bar {{ 'under-tabs' if p }}">
+      <button type="button" class="ai-status" id="ai-status" aria-haspopup="dialog" aria-expanded="false" title="진행 중인 AI 작업 보기">
+        <span class="ai-dot"></span><span class="ai-text">AI 상태 확인 중…</span>
+      </button>
+      <div class="ai-pop" id="ai-pop" role="dialog" aria-label="AI 진행 상태" hidden></div>
+    </div>
     {% block content %}{% endblock %}
     {% block scripts %}{% endblock %}
   </main>
