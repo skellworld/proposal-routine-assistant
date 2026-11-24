@@ -473,7 +473,9 @@ def scoring_page(request: Request, pid: str):
 
 @app.get("/workspaces/{pid}/step3", response_class=HTMLResponse)
 def step3_page(request: Request, pid: str):
-    return _render(request, "step3.html", p=_project(pid), active="step3", tpls=tpl_store.list_templates())
+    from .pptx_form import NUM_STYLES
+    return _render(request, "step3.html", p=_project(pid), active="step3", tpls=tpl_store.list_templates(),
+                   num_styles=NUM_STYLES)
 
 
 # ---------------- 워크스페이스 / 파일 ----------------
@@ -897,7 +899,7 @@ def step3_toc(pid: str):
 @app.put("/api/projects/{pid}/step3/toc")
 def step3_save(pid: str, data: dict = Body(...)):
     p = _project(pid)
-    for key in ("toc", "proposal_title", "template", "company"):
+    for key in ("toc", "proposal_title", "template", "company", "num_style"):
         if key in data:
             p["step3"][key] = data[key]
     storage.save_project(p)
@@ -908,7 +910,7 @@ def step3_save(pid: str, data: dict = Body(...)):
 def step3_build(pid: str, data: dict = Body(default={})):
     p = _project(pid)
     s3 = p["step3"]
-    for key in ("toc", "proposal_title", "template", "company"):
+    for key in ("toc", "proposal_title", "template", "company", "num_style"):
         if key in data:
             s3[key] = data[key]
     if not s3.get("toc"):
@@ -920,7 +922,8 @@ def step3_build(pid: str, data: dict = Body(default={})):
     # 표지 날짜(YYYY.MM): 제출 마감일이 있으면 그 달, 없으면 이번 달
     ym = p.get("deadline", "")[:7].replace("-", ".") or None
     build_proposal_pptx(tpl_store.path(t["file"]), s3["toc"], s3.get("proposal_title", "") or p["name"],
-                        s3.get("company", ""), storage.output_dir(pid) / fname, t.get("mapping"), ym)
+                        s3.get("company", ""), storage.output_dir(pid) / fname, t.get("mapping"), ym,
+                        s3.get("num_style") or "auto")
     s3["template"] = t["file"]
     s3.setdefault("outputs", []).insert(0, fname)
     storage.save_project(p)

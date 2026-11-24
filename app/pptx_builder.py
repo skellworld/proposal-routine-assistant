@@ -156,7 +156,8 @@ def _label(item: dict) -> str:
     title = (item.get("title") or "").strip()
     if not num:
         return title
-    sep = " " if any(c in num for c in ".)") else ". "
+    circled = len(num) == 1 and ("\u2460" <= num <= "\u2473" or "\u3251" <= num <= "\u32bf")
+    sep = " " if circled or any(c in num for c in ".)") else ". "
     return f"{num}{sep}{title}"
 
 
@@ -172,15 +173,24 @@ SAMPLE_TOC = [
 
 
 def build_proposal_pptx(template: Path, toc: list[dict], proposal_title: str, company: str, out: Path,
-                        mapping: dict | None = None, ym: str | None = None) -> Path:
-    from .pptx_form import build_form_pptx, detect_form
+                        mapping: dict | None = None, ym: str | None = None, num_style: str = "auto") -> Path:
+    """num_style: 대목차 번호 표기 — auto(RFP 원문 따름) / arabic(01) / roman(Ⅰ) / circled(①)."""
+    from .pptx_form import build_form_pptx, chapter_num, detect_form, resolve_num_style
     from .pptx_token import build_token_pptx, detect_token_form
 
+    style = resolve_num_style(num_style, toc)
     probe = Presentation(str(template))
     if detect_token_form(probe) is not None:  # 토큰형 양식({{토큰}} + #역할 노트)
-        return build_token_pptx(template, toc, proposal_title, out, ym)
+        return build_token_pptx(template, toc, proposal_title, out, ym, style)
     if detect_form(probe) is not None:  # 안내 문구형 양식
-        return build_form_pptx(template, toc, proposal_title, out, ym)
+        return build_form_pptx(template, toc, proposal_title, out, ym, style)
+    # 레이아웃 기반: 대목차 번호를 선택한 표기로 바꿔 쓴다 (01 대신 1처럼 패딩 없이)
+    ci = 0
+    toc = [dict(t) for t in toc]
+    for t in toc:
+        if int(t.get("level", 1)) == 1:
+            ci += 1
+            t["number"] = chapter_num(ci, style, pad=False)
     proposal_title = " ".join(proposal_title.splitlines())
     prs = Presentation(str(template))
     _remove_all_slides(prs)

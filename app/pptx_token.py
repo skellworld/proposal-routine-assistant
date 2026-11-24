@@ -18,7 +18,7 @@ from pptx import Presentation
 from pptx.util import Emu, Inches
 
 from .pptx_form import (_duplicate, _finalize_order, _iter_shapes, _num_dot, _renumber_ids,
-                        _replace_total_pages, _set_para, chapter_tree, title_lines)
+                        _replace_total_pages, _set_para, chapter_num, chapter_tree, title_lines)
 
 ROLE_MARKS = {"#표지": "cover", "#조견표": "summary", "#목차": "toc", "#간지": "section",
               "#본문-중": "body_mid", "#본문": "body", "#뒷표지": "back"}
@@ -123,7 +123,7 @@ def _expand_paragraph_list(shapes, token: str, values: list[str]) -> None:
             return
 
 
-def _expand_toc(slide, titles: list[str], slide_h: int) -> None:
+def _expand_toc(slide, titles: list[str], slide_h: int, num_style: str = "arabic") -> None:
     item_shapes = [s for s in slide.shapes if "목차제목" in _tokens_in([s])]
     if not item_shapes:
         return
@@ -139,7 +139,7 @@ def _expand_toc(slide, titles: list[str], slide_h: int) -> None:
         i = 0
         for p in sh.text_frame.paragraphs:
             if "{{목차제목}}" in "".join(r.text for r in p.runs) and i < len(titles):
-                _fill_paragraph(p, {"목차번호": f"{i + 1:02d}", "목차제목": titles[i]})
+                _fill_paragraph(p, {"목차번호": chapter_num(i + 1, num_style), "목차제목": titles[i]})
                 i += 1
         return
     # 도형(그룹) 복제: 기존 묶음들의 간격·색 패턴을 이어간다
@@ -163,14 +163,15 @@ def _expand_toc(slide, titles: list[str], slide_h: int) -> None:
         tree.remove(g._element)
     for i, (g, t) in enumerate(zip(shapes, titles)):
         g.top = Emu(top0 + step * i)
-        fill_tokens([g], {"목차번호": f"{i + 1:02d}", "목차제목": t})
+        fill_tokens([g], {"목차번호": chapter_num(i + 1, num_style), "목차제목": t})
 
 
 def _set_notes(slide, text: str) -> None:
     slide.notes_slide.notes_text_frame.text = text or ""
 
 
-def build_token_pptx(template: Path, toc: list[dict], title: str, out: Path, ym: str | None = None) -> Path:
+def build_token_pptx(template: Path, toc: list[dict], title: str, out: Path, ym: str | None = None,
+                     num_style: str = "arabic") -> Path:
     prs = Presentation(str(template))
     roles = detect_token_form(prs)
     if roles is None:
@@ -196,14 +197,14 @@ def build_token_pptx(template: Path, toc: list[dict], title: str, out: Path, ym:
         use("summary", {})
     if "toc" in roles:
         s = src[roles["toc"]]
-        _expand_toc(s, [c["item"].get("title", "") for c in chapters], prs.slide_height)
+        _expand_toc(s, [c["item"].get("title", "") for c in chapters], prs.slide_height, num_style)
         fill_tokens(s.shapes, base)
         _renumber_ids(s)
         _set_notes(s, "")
         ordered.append(s)
 
     for ci, ch in enumerate(chapters, 1):
-        chap = {"대번호": f"{ci:02d}", "대제목": ch["item"].get("title", "")}
+        chap = {"대번호": chapter_num(ci, num_style), "대제목": ch["item"].get("title", "")}
         if "section" in roles:
             sec = _duplicate(prs, src[roles["section"]])
             _expand_paragraph_list(sec.shapes, "중목차", [m["item"].get("title", "") for m in ch["mids"]])

@@ -247,7 +247,7 @@ def _replace_total_pages(prs, total: int) -> None:
                         r.text = re.sub(r"\d+", str(total), r.text)
 
 
-def _fill_toc(slide, chapters: list[str], slide_h: int) -> None:
+def _fill_toc(slide, chapters: list[str], slide_h: int, num_style: str = "arabic") -> None:
     """'01 + 대제목' 그룹을 대제목 수에 맞게 복제/삭제하고 세로 간격을 맞춘다."""
     def is_item(g):
         texts = [s.text_frame.text.strip() for s in _iter_shapes(g.shapes) if s.has_text_frame]
@@ -281,7 +281,7 @@ def _fill_toc(slide, chapters: list[str], slide_h: int) -> None:
                 continue
             t = s.text_frame.text.strip()
             if re.fullmatch(r"\d{1,2}", t):
-                _set_para(s.text_frame.paragraphs[0], f"{i + 1:02d}")
+                _set_para(s.text_frame.paragraphs[0], chapter_num(i + 1, num_style))
             elif t:
                 _set_lines(s.text_frame, [title])
 
@@ -295,6 +295,68 @@ def _label(num: str, title: str) -> str:
     if not num:
         return title
     return f"{num} {title}" if any(c in num for c in ".)") else f"{num}. {title}"
+
+
+# ---------------- 대목차 번호 표기 ----------------
+# auto = RFP 목차 원문의 대목차 번호를 보고 결정, arabic = 01·02·03, roman = Ⅰ·Ⅱ·Ⅲ, circled = ①·②·③
+NUM_STYLES = {"auto": "자동 (RFP 원문 표기 따름)", "arabic": "01 · 02 · 03", "roman": "Ⅰ · Ⅱ · Ⅲ", "circled": "① · ② · ③"}
+_ROMAN_CHARS = "ⅠⅡⅢⅣⅤⅥⅦⅧⅨⅩⅪⅫ"
+_ROMAN_ASCII = re.compile(r"^(?=[IVXLC])M*(C[MD]|D?C{0,3})(X[CL]|L?X{0,3})(I[XV]|V?I{0,3})$")
+
+
+def _circled(i: int) -> str:
+    if 1 <= i <= 20:
+        return chr(0x2460 + i - 1)   # ①~⑳
+    if 21 <= i <= 35:
+        return chr(0x3251 + i - 21)  # ㉑~㉟
+    if 36 <= i <= 50:
+        return chr(0x32B1 + i - 36)  # ㊱~㊿
+    return str(i)
+
+
+def _roman(i: int) -> str:
+    if 1 <= i <= len(_ROMAN_CHARS):
+        return _ROMAN_CHARS[i - 1]
+    out, vals = "", [(1000, "M"), (900, "CM"), (500, "D"), (400, "CD"), (100, "C"), (90, "XC"),
+                     (50, "L"), (40, "XL"), (10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I")]
+    for v, s in vals:
+        while i >= v:
+            out, i = out + s, i - v
+    return out
+
+
+def detect_num_style(toc: list[dict]) -> str:
+    """대목차 번호 원문(예: Ⅰ, II., ①, 1, 제1장)을 보고 표기 방식을 정한다. 판단할 수 없으면 arabic."""
+    votes = {"roman": 0, "circled": 0, "arabic": 0}
+    for item in toc:
+        if int(item.get("level", 1)) != 1:
+            continue
+        n = re.sub(r"[\s.)\]:]+$", "", (item.get("number") or "").strip()).lstrip("([")
+        n = re.sub(r"^제\s*", "", re.sub(r"\s*[장편부]$", "", n))
+        if not n:
+            continue
+        if n[0] in _ROMAN_CHARS or _ROMAN_ASCII.match(n.upper()):
+            votes["roman"] += 1
+        elif "①" <= n[0] <= "⑳" or "㉑" <= n[0] <= "㉟" or "㊱" <= n[0] <= "㊿":
+            votes["circled"] += 1
+        elif n[0].isdigit():
+            votes["arabic"] += 1
+    best = max(votes, key=votes.get)
+    return best if votes[best] else "arabic"
+
+
+def resolve_num_style(style: str | None, toc: list[dict]) -> str:
+    style = style if style in NUM_STYLES else "auto"
+    return detect_num_style(toc) if style == "auto" else style
+
+
+def chapter_num(i: int, style: str, pad: bool = True) -> str:
+    """i번째(1부터) 대목차 번호. arabic은 양식 디자인에 맞춰 두 자리(01)로, pad=False면 1."""
+    if style == "roman":
+        return _roman(i)
+    if style == "circled":
+        return _circled(i)
+    return f"{i:02d}" if pad else str(i)
 
 
 def _num_dot(num: str) -> str:
@@ -326,7 +388,8 @@ def title_lines(title: str) -> list[str]:
     return [l for l in lines if l] or ["사업명"]
 
 
-def build_form_pptx(template: Path, toc: list[dict], title: str, out: Path, ym: str | None = None) -> Path:
+def build_form_pptx(template: Path, toc: list[dict], title: str, out: Path, ym: str | None = None,
+                    num_style: str = "arabic") -> Path:
     prs = Presentation(str(template))
     form = detect_form(prs)
     if form is None:
@@ -347,14 +410,14 @@ def build_form_pptx(template: Path, toc: list[dict], title: str, out: Path, ym: 
         ordered.append(src[form["summary"]])
     if "toc" in form:
         toc_slide = src[form["toc"]]
-        _fill_toc(toc_slide, [c["item"].get("title", "") for c in chapters], prs.slide_height)
+        _fill_toc(toc_slide, [c["item"].get("title", "") for c in chapters], prs.slide_height, num_style)
         _renumber_ids(toc_slide)
         ordered.append(toc_slide)
 
     for ci, ch in enumerate(chapters, 1):
         sec = _duplicate(prs, src[form["section"]])
         if "num" in sec_ph and _ph(sec, sec_ph["num"]) is not None:
-            _set_lines(_ph(sec, sec_ph["num"]).text_frame, [f"{ci:02d}"])
+            _set_lines(_ph(sec, sec_ph["num"]).text_frame, [chapter_num(ci, num_style)])
         if _ph(sec, sec_ph["title"]) is not None:
             _set_lines(_ph(sec, sec_ph["title"]).text_frame, [ch["item"].get("title", "")])
         if "list" in sec_ph and _ph(sec, sec_ph["list"]) is not None:
