@@ -47,6 +47,7 @@ data/                  런타임 데이터. git에는 data/templates/만 포함
 
 ## 주의
 - AI를 호출하는 버튼·입력을 새로 만들면 `data-ai` 속성을 붙이고(AI 연결 안 함이면 자동으로 꺼짐), 해당 POST 경로를 main.py의 `AI_PATHS`에 추가한다.
+- 새 AI 호출은 `with claude_client.task("작업명", pid):`(다른 스레드면 `bound(labeled(...))`)로 감싼다. 이름이 'AI 진행 상태' 말풍선에 표시된다.
 - `.bat` 파일은 **CP949 + CRLF, chcp 없이** 저장해야 cmd에서 한글이 깨지지 않는다(.gitattributes에서 -text).
 - 이 폴더가 Google 드라이브 동기화 폴더일 수 있어 venv는 사용자 홈에 둔다.
 - Jinja에서 `p.step2.items`는 dict.items로 해석된다 → `p.step2['items']`.
